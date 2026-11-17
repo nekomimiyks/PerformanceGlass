@@ -1201,40 +1201,8 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
 }
 
 unsafe fn make_icon(instance: HINSTANCE) -> HICON {
-    let mut pixels = vec![0_u8; 32 * 32 * 4];
-    for y in 0..32 {
-        for x in 0..32 {
-            let i = (y * 32 + x) * 4;
-            pixels[i] = 35;
-            pixels[i + 1] = 25;
-            pixels[i + 2] = 17;
-            pixels[i + 3] = 255;
-        }
-    }
-    let heights = [
-        21, 21, 20, 20, 19, 19, 11, 6, 13, 20, 23, 22, 20, 18, 17, 18, 18, 17, 13, 9, 12, 18, 20,
-        18, 17, 16,
-    ];
-    for (n, y) in heights.iter().enumerate() {
-        let x = n + 3;
-        let prev = if n == 0 { *y } else { heights[n - 1] };
-        for yy in prev.min(*y)..=prev.max(*y) {
-            for dy in 0..2 {
-                let i = ((yy + dy) as usize * 32 + x) * 4;
-                pixels[i] = 250;
-                pixels[i + 1] = 165;
-                pixels[i + 2] = 96;
-            }
-        }
-    }
-    for x in 3..29 {
-        let i = (26 * 32 + x) * 4;
-        pixels[i] = 153;
-        pixels[i + 1] = 211;
-        pixels[i + 2] = 52;
-    }
-    let mask = [0_u8; 128];
-    CreateIcon(instance, 32, 32, 1, 32, mask.as_ptr(), pixels.as_ptr())
+    // Load an owned handle from the embedded, multi-resolution icon resource.
+    LoadImageW(instance, 101_usize as *const u16, IMAGE_ICON, 0, 0, LR_DEFAULTSIZE) as HICON
 }
 
 unsafe fn save_bitmap(

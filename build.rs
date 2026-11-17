@@ -2,6 +2,7 @@ use std::{env, fs, path::PathBuf, process::Command};
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=assets/icon/performance-glass.ico");
     println!("cargo:rerun-if-env-changed=WINDRES");
     println!("cargo:rerun-if-env-changed=RC");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
@@ -16,6 +17,8 @@ fn main() {
         "Build for a supported x64 Windows target"
     );
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    fs::copy("assets/icon/performance-glass.ico", out.join("app.ico"))
+        .expect("Application icon is required");
     let version = env::var("CARGO_PKG_VERSION").unwrap();
     let numeric_version = format!("{},0", version.replace('.', ","));
     let manifest = format!(
@@ -31,6 +34,7 @@ fn main() {
     fs::write(out.join("app.manifest"), manifest).unwrap();
     let resource = format!(
         r#"1 24 "app.manifest"
+101 ICON "app.ico"
 1 VERSIONINFO
 FILEVERSION {numeric_version}
 PRODUCTVERSION {numeric_version}
