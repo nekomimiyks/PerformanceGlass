@@ -13,9 +13,15 @@ Windows 10 / 11（64bit）向けの軽量な常駐パフォーマンスモニタ
 
 **[最新版をダウンロード（GitHub Releases）](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)**
 
-Assetsの `PerformanceGlass-v0.1.7-Windows.zip` を展開し、`PerformanceGlass.exe` をダブルクリックしてください。EXE単体でも起動できます。インストール・管理者権限・追加ランタイムは不要です。
+Assetsの `PerformanceGlass-v0.1.8-Windows-MSVC.zip` を展開し、`PerformanceGlass.exe` をダブルクリックしてください。EXE単体でも起動できます。インストール・管理者権限・追加ランタイムは不要です。
 
 このリポジトリ直下の `PerformanceGlass.exe` も同じ配布用ファイルです。
+
+### v0.1.8の変更
+
+Windows標準のMSVCツールチェーンによる比較版です。GitHub ActionsのWindows環境でソースからビルドし、単体テストとUI検証を実行しています。C/C++ランタイムはEXEに静的リンクしており、追加のランタイム導入は不要です。
+
+計測・CPU温度連携・グラフ・常駐・自動起動などの機能は変更していません。配布環境の違いを確認するための比較版で、セキュリティーソフトによる隔離・削除の解消は未確認です。電子署名は付いていません。
 
 ### v0.1.7の変更
 
@@ -103,6 +109,14 @@ cargo test --locked --target-dir "$env:TEMP\PerformanceGlass-build"
 ```
 
 ビルド結果はリポジトリ直下の `PerformanceGlass.exe` です。MinGWの制約により、ビルド出力先には英数字のパスを指定してください。Windows性能カウンターの統合テストは、通常のWindows環境で実行します。
+
+MSVC版はVisual Studio C++ Build ToolsとWindows SDKがある環境で、`RC` にリソースコンパイラーのパスを指定してビルドできます。
+
+```powershell
+.\build.ps1 -Target x86_64-pc-windows-msvc
+```
+
+GitHub Actionsの「Windows MSVC build」からも同じターゲットのビルドと検証を実行できます。EXEのビルド元は[実行記録](https://github.com/nekomimiyks/PerformanceGlass/actions/workflows/windows-build.yml)で確認できます。
 
 見本表示は `--demo`、描画検証は `--demo --test-ui --qa-dir <出力先> --exit-after 8` で実行できます。検証モードは個人設定を保存しません。
 
