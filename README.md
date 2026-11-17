@@ -13,11 +13,15 @@ Windows 10 / 11（64bit）向けの軽量な常駐パフォーマンスモニタ
 
 **[最新版をダウンロード（GitHub Releases）](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)**
 
-Assetsの `PerformanceGlass-v0.1.8-Windows-MSVC.zip` を展開し、`PerformanceGlass.exe` をダブルクリックしてください。EXE単体でも起動できます。インストール・管理者権限・追加ランタイムは不要です。
+Assetsの `PerformanceGlass-v0.1.10-Windows-MSVC.zip` をすべて展開し、`PerformanceGlass.exe` をダブルクリックしてください。インストール・管理者権限・追加ランタイムは不要です。
 
-このリポジトリ直下の `PerformanceGlass.exe` も同じ配布用ファイルです。
+配布ファイルはReleasesにまとめています。ZIPの内容はEXE・起動案内・ライセンス・第三者表記の4ファイルです。EXEには専用アイコンを内蔵しています。
 
 Microsoft Store版（v0.1.10）は2026年11月18日（日本時間）に初回申請を送信し、現在は認定中です。認定に合格すると無料で公開されます。現時点では未公開で、GitHubの配布EXEは未署名です。Storeで配布されるMSIXには認定後にMicrosoft側の署名が適用されます。[MSIXのビルド手順と申請状況](store/README.md)、[プライバシーポリシー](docs/privacy.md)を公開しています。
+
+### v0.1.10の変更
+
+専用アイコンをEXE・ウィンドウ・通知領域へ組み込みました。Microsoft Store向けMSIXと、Store版での自動起動に対応しました。通常のZIP版の自動起動方式は従来どおりです。配布ZIPは起動に必要な4ファイルに整理し、詳細な説明と画像はGitHubにまとめました。
 
 ### v0.1.8の変更
 

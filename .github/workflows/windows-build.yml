@@ -52,8 +52,8 @@ jobs:
           $report = Get-Content -LiteralPath (Join-Path $qa 'ui-checks.txt') -Raw
           Write-Output $report
           if ($report -notmatch 'UI検証: 成功') { throw 'UI checks failed' }
-          Copy-Item -LiteralPath README.md,LICENSE,THIRD_PARTY_NOTICES.txt -Destination package
-          Copy-Item -LiteralPath docs -Destination package\docs -Recurse
+          Copy-Item -LiteralPath LICENSE,THIRD_PARTY_NOTICES.txt -Destination package
+          Copy-Item -LiteralPath packaging\README.txt -Destination package\README.txt
           $version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
           if (-not $version) { throw 'Product version missing' }
           $zip = "PerformanceGlass-v$version-Windows-MSVC.zip"

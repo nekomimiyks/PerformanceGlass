@@ -2,5 +2,8 @@
 /dist/
 /verification/
 /release-assets/
+/PerformanceGlass.exe
+/store/Screenshots/
+/assets/icon/performance-glass-1024.png
 *.pdb
 *.log
