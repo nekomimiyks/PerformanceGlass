@@ -121,3 +121,11 @@ GitHub Actionsの「Windows MSVC build」からも同じターゲットのビル
 見本表示は `--demo`、描画検証は `--demo --test-ui --qa-dir <出力先> --exit-after 8` で実行できます。検証モードは個人設定を保存しません。
 
 依存ライブラリの表記は `THIRD_PARTY_NOTICES.txt` を参照してください。
+
+## ライセンス
+
+Performance Glassは[MITライセンス](LICENSE)で公開しています。著作権表示とライセンス文を保持すれば、改変・再配布・商用利用が可能です。依存ライブラリのライセンスは `THIRD_PARTY_NOTICES.txt` を参照してください。
+
+## Code signing policy（コード署名方針）
+
+無料の正規署名サービスへの申請を準備しています。現時点の配布EXEは未署名で、署名済みという意味ではありません。[署名方針・担当者・プライバシー](docs/code-signing.md)を公開しています。
