@@ -3,13 +3,17 @@ use std::{env, fs, path::PathBuf, process::Command};
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=WINDRES");
+    println!("cargo:rerun-if-env-changed=RC");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    assert_eq!(
-        env::var("TARGET").unwrap(),
-        "x86_64-pc-windows-gnu",
-        "Build with the documented x86_64-pc-windows-gnu toolchain"
+    let target = env::var("TARGET").unwrap();
+    assert!(
+        matches!(
+            target.as_str(),
+            "x86_64-pc-windows-gnu" | "x86_64-pc-windows-msvc"
+        ),
+        "Build for a supported x64 Windows target"
     );
     let out = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let version = env::var("CARGO_PKG_VERSION").unwrap();
@@ -57,6 +61,23 @@ END
 "#
     );
     fs::write(out.join("app.rc"), resource).unwrap();
+    if target.ends_with("-msvc") {
+        let compiler = env::var_os("RC").unwrap_or_else(|| "rc.exe".into());
+        let status = Command::new(compiler)
+            .current_dir(&out)
+            .args(["/nologo", "/fo", "app-resources.res", "app.rc"])
+            .status()
+            .expect("rc.exe is required: use Windows SDK or set RC");
+        assert!(
+            status.success(),
+            "Failed to compile Windows application resources"
+        );
+        println!(
+            "cargo:rustc-link-arg-bins={}",
+            out.join("app-resources.res").display()
+        );
+        return;
+    }
     let compiler = PathBuf::from(env::var_os("WINDRES").unwrap_or_else(|| "windres.exe".into()));
     let mut command = Command::new(&compiler);
     if let Some(directory) = compiler.parent().filter(|p| !p.as_os_str().is_empty()) {

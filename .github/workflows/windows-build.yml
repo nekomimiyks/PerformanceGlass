@@ -1,0 +1,70 @@
+name: Windows MSVC build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Prepare Windows SDK and Rust
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory | Sort-Object Name -Descending | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'x64\rc.exe') } | Select-Object -First 1
+          if (-not $sdk) { throw 'Windows SDK resource compiler not found' }
+          "RC=$(Join-Path $sdk.FullName 'x64\rc.exe')" >> $env:GITHUB_ENV
+          rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Rust installation failed' }
+      - name: Test and build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo +stable test --locked --target x86_64-pc-windows-msvc -- --skip live_windows_counters
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+          cargo +stable build --release --locked --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          New-Item -ItemType Directory -Path package | Out-Null
+          Copy-Item -LiteralPath target\x86_64-pc-windows-msvc\release\performance-glass.exe -Destination package\PerformanceGlass.exe
+      - name: Check application and package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path $PWD 'package\PerformanceGlass.exe'
+          $qa = Join-Path $env:RUNNER_TEMP 'PerformanceGlass-ui'
+          New-Item -ItemType Directory -Path $qa -Force | Out-Null
+          $process = Start-Process -FilePath $exe -ArgumentList @('--demo','--test-ui','--qa-dir', ('"' + $qa + '"'),'--exit-after','8') -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'UI checks timed out' }
+          if ($process.ExitCode -ne 0) { throw 'UI checks crashed' }
+          $report = Get-Content -LiteralPath (Join-Path $qa 'ui-checks.txt') -Raw
+          Write-Output $report
+          if ($report -notmatch 'UI検証: 成功') { throw 'UI checks failed' }
+          Copy-Item -LiteralPath README.md,THIRD_PARTY_NOTICES.txt -Destination package
+          Copy-Item -LiteralPath docs -Destination package\docs -Recurse
+          $version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
+          if (-not $version) { throw 'Product version missing' }
+          $zip = "PerformanceGlass-v$version-Windows-MSVC.zip"
+          Compress-Archive -Path package\* -DestinationPath $zip
+          (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() + '  PerformanceGlass.exe' | Set-Content -LiteralPath SHA256SUMS.txt
+          (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $zip | Add-Content -LiteralPath SHA256SUMS.txt
+          @("Commit: $env:GITHUB_SHA", 'Target: x86_64-pc-windows-msvc', 'CRT: static', 'Authenticode: unsigned', (rustc +stable -V)) | Set-Content -LiteralPath build-info.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: PerformanceGlass-msvc
+          path: |
+            package/PerformanceGlass.exe
+            PerformanceGlass-*-Windows-MSVC.zip
+            SHA256SUMS.txt
+            build-info.txt
+          retention-days: 14
