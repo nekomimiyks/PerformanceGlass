@@ -33,6 +33,14 @@ struct Group {
     width: i32,
 }
 impl App {
+    pub(super) fn normal_stats_fit(&self, dc: HDC, sample: Sample, width: i32) -> bool {
+        let available = width - self.px(12.);
+        let mut groups = self.groups(dc, sample, false);
+        if groups.iter().map(|g| g.width).sum::<i32>() > available {
+            groups = self.groups(dc, sample, true);
+        }
+        !groups.is_empty() && groups.iter().map(|g| g.width).sum::<i32>() <= available
+    }
     fn measure(&self, dc: HDC, text: &str, font: HFONT) -> i32 {
         unsafe {
             let old = SelectObject(dc, font);
@@ -182,16 +190,24 @@ impl App {
             }
             self.available[i] = present || now < self.availability_until[i];
         }
-        let mut groups = self.groups(dc, latest, false);
+        // Consult the actual layout rules before formatting/measuring cards.
+        // Graph-only and short windows cannot display them at any width.
+        let stats_possible =
+            Layout::new(w, h, self.scale, self.settings.frameless, true, false).stats;
+        let mut groups = if stats_possible {
+            self.groups(dc, latest, false)
+        } else {
+            Vec::new()
+        };
         let width_available = w - self.px(12.);
-        if groups.iter().map(|g| g.width).sum::<i32>() > width_available {
+        if stats_possible && groups.iter().map(|g| g.width).sum::<i32>() > width_available {
             groups = self.groups(dc, latest, true);
         }
         let stats_fit =
             !groups.is_empty() && groups.iter().map(|g| g.width).sum::<i32>() <= width_available;
         let active = std::array::from_fn(|i| self.available[i] && self.settings.visible[i]);
         let has_network = active[3] || active[4];
-        let layout = Layout::new(
+        let mut layout = Layout::new(
             w,
             h,
             self.scale,
@@ -199,6 +215,17 @@ impl App {
             stats_fit,
             has_network,
         );
+        if let Some(plot) = self.frame_plot {
+            if plot.left >= layout.plot.left
+                && plot.top >= layout.plot.top
+                && plot.right <= layout.plot.right
+                && plot.bottom <= layout.plot.bottom
+            {
+                layout.plot = plot;
+            } else {
+                self.frame_plot = None;
+            }
+        }
         let p = &self.palette;
         if layout.toolbar {
             let y = self.px(3.);
@@ -300,11 +327,13 @@ impl App {
         let end = if self.demo { latest.time } else { now };
         self.chart_end = end;
         let graph_start = Instant::now();
-        let graph =
-            self.data
-                .lock()
-                .unwrap()
-                .graph(end, range, (plot.right - plot.left) as usize, &active);
+        self.graph.reset_buckets((plot.right - plot.left) as usize);
+        let maximum = {
+            let history = self.data.lock().unwrap();
+            history.accumulate_for_display(end, range, &mut self.graph.buckets, &active)
+        };
+        self.graph.finish_network(&active, maximum);
+        let graph = &self.graph;
         self.profile_graph_s += graph_start.elapsed().as_secs_f64();
         // Expand immediately; require 30 seconds before a lower throughput scale.
         if self.network_range != self.settings.range || graph.network_top > self.network_top {
@@ -563,7 +592,7 @@ impl App {
         }
         if self.qa_dir.is_some() && !crate::label_layout::fits(title_plot, &title_widths) {
             self.qa_errors
-                .push("title horizontal intervals do not fit".into());
+                .push(format!("title horizontal intervals do not fit: client={w}x{h}, scale={}, plot_width={}, widths={title_widths:?}", self.scale, plot.right-plot.left));
         }
         let title_height = if tiny_titles {
             12

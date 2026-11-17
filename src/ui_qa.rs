@@ -2,7 +2,13 @@
 //! with --test-ui; never persists settings or changes system display settings.
 use super::*;
 unsafe fn double_click_graph(hwnd: HWND, ptr: *mut App) {
+    (*ptr).render_now(hwnd);
     let p = (*ptr).plot;
+    let mut before = POINT {
+        x: p.left,
+        y: p.top,
+    };
+    ClientToScreen(hwnd, &mut before);
     let x = (p.left + p.right) / 2;
     let y = (p.top + p.bottom) / 2;
     let was_visible = IsWindowVisible(hwnd);
@@ -12,6 +18,33 @@ unsafe fn double_click_graph(hwnd: HWND, ptr: *mut App) {
         0,
         (x as u16 as u32 | ((y as u16 as u32) << 16)) as isize,
     );
+    (*ptr).render_now(hwnd);
+    let current = (*ptr).plot;
+    let mut after = POINT {
+        x: current.left,
+        y: current.top,
+    };
+    ClientToScreen(hwnd, &mut after);
+    if (p.right - p.left, p.bottom - p.top, before.x, before.y)
+        != (
+            current.right - current.left,
+            current.bottom - current.top,
+            after.x,
+            after.y,
+        )
+    {
+        (*ptr).qa_errors.push(format!(
+            "frame toggle changed plot geometry: {}x{} @{},{} -> {}x{} @{},{}",
+            p.right - p.left,
+            p.bottom - p.top,
+            before.x,
+            before.y,
+            current.right - current.left,
+            current.bottom - current.top,
+            after.x,
+            after.y
+        ));
+    }
     if IsWindowVisible(hwnd) != was_visible {
         (*ptr)
             .qa_errors
@@ -47,7 +80,7 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
     if (*ptr).settings.frameless {
         double_click_graph(hwnd, ptr);
     }
-    for dpi in [96, 144, 192] {
+    for dpi in [96, 120, 144, 192, 288, 384] {
         (*ptr).scale = dpi as f64 / 96.;
         let fonts = Fonts::new((*ptr).scale);
         SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
@@ -96,6 +129,21 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
             (*ptr)
                 .qa_errors
                 .push("double click did not hide chrome".into());
+        }
+        SetWindowPos(
+            hwnd,
+            null_mut(),
+            original.left,
+            original.top,
+            280,
+            270,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        );
+        (*ptr).render_now(hwnd);
+        if (*ptr).plot.right <= (*ptr).plot.left || (*ptr).plot.bottom <= (*ptr).plot.top {
+            (*ptr)
+                .qa_errors
+                .push(format!("tall narrow graph disappeared at DPI {dpi}"));
         }
         SetWindowPos(
             hwnd,
@@ -158,8 +206,10 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
         snapshot(&mut *ptr, &format!("thin60-dpi{dpi}.bmp"));
         double_click_graph(hwnd, ptr);
         GetWindowRect(hwnd, &mut client);
-        if (*ptr).settings.frameless || (client.bottom - client.top) < (*ptr).px(280.) {
-            (*ptr).qa_errors.push("normal size was not restored".into());
+        if (*ptr).settings.frameless {
+            (*ptr)
+                .qa_errors
+                .push("normal frame was not restored".into());
         }
     }
     (*ptr).scale = saved_scale;
@@ -208,6 +258,20 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
                 .push(format!("history hover missing sensors or disk I/O: {text}"));
         }
     }
+    let tooltip_x = (*ptr).plot.left + 5;
+    let tooltip_y = (*ptr).plot.top + 5;
+    SendMessageW(
+        hwnd,
+        WM_MOUSEMOVE,
+        0,
+        (tooltip_x as u16 as u32 | ((tooltip_y as u16 as u32) << 16)) as isize,
+    );
+    SendMessageW(hwnd, WM_MOUSELEAVE, 0, 0);
+    if (*ptr).tooltip_on || (*ptr).hover.is_some() {
+        (*ptr)
+            .qa_errors
+            .push("tooltip did not hide after native hover messages".into());
+    }
     let before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     let saved_language = crate::i18n::language();
     let saved_preference = (*ptr).settings.language;
@@ -249,7 +313,7 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
             .qa_errors
             .push(format!("GDI objects leaked: {before} -> {after}"));
     }
-    let report=format!("UI検証: {}\n96/144/192 DPI、280x60物理px、通常サイズ復帰、表示状態の保持、5期間、2テーマ、温度・読み書きの履歴、GDI 30回描画\nGDI objects: {before} -> {after}\nUser objects (20 theme notifications): {user_before} -> {user_after}\n{}",if (*ptr).qa_errors.is_empty(){"成功"}else{"失敗"},(*ptr).qa_errors.join("\n"));
+    let report=format!("UI検証: {}\n96/120/144/192/288/384 DPI、280x60物理px、枠切替時のグラフ寸法と画面座標保持、表示状態の保持、5期間、2テーマ、温度・読み書きの履歴、GDI 30回描画\nGDI objects: {before} -> {after}\nUser objects (20 theme notifications): {user_before} -> {user_after}\n{}",if (*ptr).qa_errors.is_empty(){"成功"}else{"失敗"},(*ptr).qa_errors.join("\n"));
     if let Some(dir) = &(*ptr).qa_dir {
         let _ = std::fs::write(std::path::Path::new(dir).join("ui-checks.txt"), report);
     }

@@ -202,6 +202,9 @@ struct App {
     scale: f64,
     fonts: Fonts,
     buffer: BackBuffer,
+    graph: Graph,
+    frame_plot: Option<RECT>,
+    frame_changing: bool,
     strokes: rendering::StrokeBuffer,
     hits: Vec<Hit>,
     available: [bool; 6],
@@ -281,79 +284,7 @@ impl App {
             ..zeroed()
         }
     }
-    unsafe fn create_tooltip(&mut self, hwnd: HWND) {
-        if !self.tooltip.is_null() {
-            return;
-        }
-        self.tooltip = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-            wide("tooltips_class32").as_ptr(),
-            null(),
-            WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP | TTS_NOANIMATE | TTS_NOFADE,
-            0,
-            0,
-            0,
-            0,
-            hwnd,
-            null_mut(),
-            GetModuleHandleW(null()),
-            null(),
-        );
-        if self.tooltip.is_null() {
-            return;
-        }
-        let info = self.tool_info(hwnd);
-        SendMessageW(self.tooltip, TTM_ADDTOOLW, 0, &info as *const _ as isize);
-        SendMessageW(self.tooltip, TTM_SETMAXTIPWIDTH, 0, self.px(560.) as isize);
-        SendMessageW(self.tooltip, WM_SETFONT, self.fonts.small as usize, 0);
-        SetWindowTheme(self.tooltip, wide("").as_ptr(), wide("").as_ptr());
-    }
-    unsafe fn tooltip_hide(&mut self, hwnd: HWND) {
-        if self.tooltip_on && !self.tooltip.is_null() {
-            // A synchronous control message can re-enter the owner window.
-            self.tooltip_on = false;
-            let info = self.tool_info(hwnd);
-            SendMessageW(
-                self.tooltip,
-                TTM_TRACKACTIVATE,
-                0,
-                &info as *const _ as isize,
-            );
-        }
-    }
-    unsafe fn tooltip_update(&mut self, hwnd: HWND, x: i32) {
-        if self.tooltip.is_null() {
-            return;
-        }
-        let Some(text) = self.hover_text(x) else {
-            self.tooltip_hide(hwnd);
-            return;
-        };
-        self.tooltip_text = wide(&text);
-        let info = self.tool_info(hwnd);
-        SendMessageW(
-            self.tooltip,
-            TTM_UPDATETIPTEXTW,
-            0,
-            &info as *const _ as isize,
-        );
-        let mut position: POINT = zeroed();
-        GetCursorPos(&mut position);
-        SendMessageW(
-            self.tooltip,
-            TTM_TRACKPOSITION,
-            0,
-            ((position.x + self.px(12.)) as u16 as u32
-                | ((position.y + self.px(16.)) as u16 as u32) << 16) as isize,
-        );
-        SendMessageW(
-            self.tooltip,
-            TTM_TRACKACTIVATE,
-            1,
-            &info as *const _ as isize,
-        );
-        self.tooltip_on = true;
-    }
+
     fn px(&self, v: f64) -> i32 {
         (v * self.scale).round() as i32
     }
@@ -405,221 +336,7 @@ impl App {
         self.tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_ADD, &self.tray) != 0
     }
-    unsafe fn hide(&mut self, hwnd: HWND) {
-        self.hover = None;
-        self.tooltip_hide(hwnd);
-        KillTimer(hwnd, 1);
-        // Never leave an unreachable hidden process when the notification area rejects an icon.
-        if Shell_NotifyIconW(NIM_MODIFY, &self.tray) != 0 || self.tray_add(hwnd) {
-            ShowWindow(hwnd, SW_HIDE);
-        } else {
-            ShowWindow(hwnd, SW_MINIMIZE);
-        }
-    }
-    unsafe fn show(&mut self, hwnd: HWND) {
-        ShowWindow(hwnd, SW_RESTORE);
-        SetForegroundWindow(hwnd);
-        SetTimer(hwnd, 1, 1000, None);
-        InvalidateRect(hwnd, null(), 0);
-    }
-    unsafe fn command(&mut self, hwnd: HWND, id: usize) {
-        match id {
-            400..=412 => {
-                self.settings.language = id
-                    .checked_sub(401)
-                    .and_then(|i| i18n::LANGUAGES.get(i))
-                    .copied();
-                i18n::select(self.settings.language);
-                self.hover = None;
-                self.tooltip_hide(hwnd);
-                let fonts = Fonts::new(self.scale);
-                SendMessageW(self.tooltip, WM_SETFONT, fonts.small as usize, 0);
-                self.fonts = fonts;
-                let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
-                self.tray.szTip.fill(0);
-                self.tray.szTip[..tip.len()].copy_from_slice(&tip);
-                Shell_NotifyIconW(NIM_MODIFY, &self.tray);
-            }
-            101..=105 => {
-                self.settings.range = id - 101;
-                self.hover = None;
-            }
-            201..=206 => self.settings.visible[id - 201] = !self.settings.visible[id - 201],
-            301 => {
-                self.settings.topmost = !self.settings.topmost;
-                SetWindowPos(
-                    hwnd,
-                    if self.settings.topmost {
-                        HWND_TOPMOST
-                    } else {
-                        HWND_NOTOPMOST
-                    },
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-                );
-            }
-            302 => self.hide(hwnd),
-            303 => {
-                if let Err(e) = settings::set_startup(!settings::startup_enabled()) {
-                    MessageBoxW(
-                        hwnd,
-                        wide(&e).as_ptr(),
-                        wide("Performance Glass").as_ptr(),
-                        MB_ICONERROR,
-                    );
-                }
-            }
-            304 => {
-                DestroyWindow(hwnd);
-                return;
-            }
-            305 => self.show(hwnd),
-            306 => self.menu(hwnd),
-            307 => {
-                self.hover = None;
-                self.drag_start = None;
-                if GetCapture() == hwnd {
-                    ReleaseCapture();
-                }
-                self.tooltip_hide(hwnd);
-                let mut rect: RECT = zeroed();
-                GetWindowRect(hwnd, &mut rect);
-                if !self.settings.frameless {
-                    self.update_position(hwnd);
-                }
-                self.settings.frameless = !self.settings.frameless;
-                let style = crate::window_style::with_frame(
-                    GetWindowLongPtrW(hwnd, GWL_STYLE) as u32,
-                    self.settings.frameless,
-                );
-                SetWindowLongPtrW(hwnd, GWL_STYLE, style as isize);
-                SetWindowPos(
-                    hwnd,
-                    null_mut(),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE,
-                );
-                if !self.settings.frameless && (rect.bottom - rect.top) < self.px(280.) {
-                    SetWindowPos(
-                        hwnd,
-                        null_mut(),
-                        rect.left,
-                        rect.top,
-                        self.px(self.settings.normal_width as f64),
-                        self.px(self.settings.normal_height as f64),
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
-                }
-            }
-            308 => self.menu(hwnd),
-            _ => return,
-        }
-        self.save_settings();
-        InvalidateRect(hwnd, null(), 0);
-    }
-    unsafe fn menu(&mut self, hwnd: HWND) {
-        self.hover = None;
-        self.tooltip_hide(hwnd);
-        let menu = CreatePopupMenu();
-        let add = |id: usize, label: &str, checked: bool| {
-            AppendMenuW(
-                menu,
-                MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED },
-                id,
-                wide(label).as_ptr(),
-            );
-        };
-        add(305, tr("ウィンドウを表示"), false);
-        add(301, tr("常に手前に表示 (&T)"), self.settings.topmost);
-        add(
-            307,
-            tr("グラフだけ表示 (ダブルクリック / F11)"),
-            self.settings.frameless,
-        );
-        crate::packaged_startup::refresh();
-        add(
-            303,
-            tr("Windowsログオン時に起動"),
-            settings::startup_enabled(),
-        );
-        add(302, tr("トレイに格納"), false);
-        let languages = CreatePopupMenu();
-        if !languages.is_null() {
-            let append = |id: usize, name: &str, checked: bool| {
-                AppendMenuW(
-                    languages,
-                    MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED },
-                    id,
-                    wide(name).as_ptr(),
-                );
-            };
-            append(
-                400,
-                tr("Windowsに合わせる（自動）"),
-                self.settings.language.is_none(),
-            );
-            AppendMenuW(languages, MF_SEPARATOR, 0, null());
-            for (i, language) in i18n::LANGUAGES.iter().enumerate() {
-                append(
-                    401 + i,
-                    language.native_name(),
-                    self.settings.language == Some(*language),
-                );
-            }
-            if AppendMenuW(
-                menu,
-                MF_POPUP,
-                languages as usize,
-                wide(tr("言語")).as_ptr(),
-            ) == 0
-            {
-                DestroyMenu(languages);
-            }
-        }
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        for (i, name) in range_labels().iter().enumerate() {
-            add(
-                101 + i,
-                &i18n::message("履歴: {}", name),
-                self.settings.range == i,
-            );
-        }
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        for (i, name) in names().iter().enumerate() {
-            if self.available[i] {
-                add(
-                    201 + i,
-                    &i18n::message("線を表示: {}", name),
-                    self.settings.visible[i],
-                );
-            }
-        }
-        AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        add(304, tr("終了 (&X)"), false);
-        let mut pt: POINT = zeroed();
-        GetCursorPos(&mut pt);
-        SetForegroundWindow(hwnd);
-        let id = TrackPopupMenu(
-            menu,
-            TPM_RETURNCMD | TPM_RIGHTBUTTON,
-            pt.x,
-            pt.y,
-            0,
-            hwnd,
-            null(),
-        );
-        DestroyMenu(menu);
-        PostMessageW(hwnd, WM_NULL, 0, 0);
-        if id != 0 {
-            self.command(hwnd, id as usize);
-        }
-    }
+
     unsafe fn text(&self, dc: HDC, text: &str, rect: RECT, font: HFONT, color: u32, flags: u32) {
         let old = SelectObject(dc, font);
         SetTextColor(dc, color);
@@ -695,7 +412,359 @@ fn format_duration(s: u64) -> String {
     format!("−{value}")
 }
 
+unsafe fn create_tooltip(hwnd: HWND, ptr: *mut App) {
+    if !(*ptr).tooltip.is_null() {
+        return;
+    }
+    (*ptr).tooltip = CreateWindowExW(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        wide("tooltips_class32").as_ptr(),
+        null(),
+        WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP | TTS_NOANIMATE | TTS_NOFADE,
+        0,
+        0,
+        0,
+        0,
+        hwnd,
+        null_mut(),
+        GetModuleHandleW(null()),
+        null(),
+    );
+    if (*ptr).tooltip.is_null() {
+        return;
+    }
+    let info = (*ptr).tool_info(hwnd);
+    SendMessageW((*ptr).tooltip, TTM_ADDTOOLW, 0, &info as *const _ as isize);
+    SendMessageW(
+        (*ptr).tooltip,
+        TTM_SETMAXTIPWIDTH,
+        0,
+        (*ptr).px(560.) as isize,
+    );
+    SendMessageW((*ptr).tooltip, WM_SETFONT, (*ptr).fonts.small as usize, 0);
+    SetWindowTheme((*ptr).tooltip, wide("").as_ptr(), wide("").as_ptr());
+}
+
+unsafe fn tooltip_hide(hwnd: HWND, ptr: *mut App) {
+    if (*ptr).tooltip_on && !(*ptr).tooltip.is_null() {
+        // A synchronous control message can re-enter the owner window.
+        (*ptr).tooltip_on = false;
+        let info = (*ptr).tool_info(hwnd);
+        SendMessageW(
+            (*ptr).tooltip,
+            TTM_TRACKACTIVATE,
+            0,
+            &info as *const _ as isize,
+        );
+    }
+}
+
+unsafe fn tooltip_update(hwnd: HWND, ptr: *mut App, x: i32) {
+    if (*ptr).tooltip.is_null() {
+        return;
+    }
+    let Some(text) = (*ptr).hover_text(x) else {
+        tooltip_hide(hwnd, ptr);
+        return;
+    };
+    (*ptr).tooltip_text = wide(&text);
+    let info = (*ptr).tool_info(hwnd);
+    SendMessageW(
+        (*ptr).tooltip,
+        TTM_UPDATETIPTEXTW,
+        0,
+        &info as *const _ as isize,
+    );
+    let mut position: POINT = zeroed();
+    GetCursorPos(&mut position);
+    SendMessageW(
+        (*ptr).tooltip,
+        TTM_TRACKPOSITION,
+        0,
+        ((position.x + (*ptr).px(12.)) as u16 as u32
+            | ((position.y + (*ptr).px(16.)) as u16 as u32) << 16) as isize,
+    );
+    SendMessageW(
+        (*ptr).tooltip,
+        TTM_TRACKACTIVATE,
+        1,
+        &info as *const _ as isize,
+    );
+    (*ptr).tooltip_on = true;
+}
+
+unsafe fn hide(hwnd: HWND, ptr: *mut App) {
+    (*ptr).hover = None;
+    tooltip_hide(hwnd, ptr);
+    KillTimer(hwnd, 1);
+    // Never leave an unreachable hidden process when the notification area rejects an icon.
+    if Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray) != 0 || (*ptr).tray_add(hwnd) {
+        ShowWindow(hwnd, SW_HIDE);
+    } else {
+        ShowWindow(hwnd, SW_MINIMIZE);
+    }
+}
+
+unsafe fn show(hwnd: HWND, _ptr: *mut App) {
+    ShowWindow(hwnd, SW_RESTORE);
+    SetForegroundWindow(hwnd);
+    SetTimer(hwnd, 1, 1000, None);
+    InvalidateRect(hwnd, null(), 0);
+}
+
+// Native window calls can synchronously re-enter wndproc. Keep only raw
+// state pointers across these boundaries, never a live exclusive App borrow.
+unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
+    match id {
+        400..=412 => {
+            (*ptr).frame_plot = None;
+            (*ptr).settings.language = id
+                .checked_sub(401)
+                .and_then(|i| i18n::LANGUAGES.get(i))
+                .copied();
+            i18n::select((*ptr).settings.language);
+            (*ptr).hover = None;
+            tooltip_hide(hwnd, ptr);
+            let fonts = Fonts::new((*ptr).scale);
+            SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
+            (*ptr).fonts = fonts;
+            let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
+            (*ptr).tray.szTip.fill(0);
+            (&mut (*ptr).tray.szTip)[..tip.len()].copy_from_slice(&tip);
+            Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray);
+        }
+        101..=105 => {
+            (*ptr).settings.range = id - 101;
+            (*ptr).hover = None;
+        }
+        201..=206 => (*ptr).settings.visible[id - 201] = !(*ptr).settings.visible[id - 201],
+        301 => {
+            (*ptr).settings.topmost = !(*ptr).settings.topmost;
+            SetWindowPos(
+                hwnd,
+                if (*ptr).settings.topmost {
+                    HWND_TOPMOST
+                } else {
+                    HWND_NOTOPMOST
+                },
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+        302 => hide(hwnd, ptr),
+        303 => {
+            if let Err(e) = settings::set_startup(!settings::startup_enabled()) {
+                MessageBoxW(
+                    hwnd,
+                    wide(&e).as_ptr(),
+                    wide("Performance Glass").as_ptr(),
+                    MB_ICONERROR,
+                );
+            }
+        }
+        304 => {
+            DestroyWindow(hwnd);
+            return;
+        }
+        305 => show(hwnd, ptr),
+        306 => menu(hwnd, ptr),
+        307 => {
+            (*ptr).hover = None;
+            (*ptr).drag_start = None;
+            if GetCapture() == hwnd {
+                ReleaseCapture();
+            }
+            tooltip_hide(hwnd, ptr);
+            (*ptr).render_now(hwnd);
+            let old_plot = (*ptr).plot;
+            let plot_width = (old_plot.right - old_plot.left).max(1);
+            let plot_height = (old_plot.bottom - old_plot.top).max(1);
+            let mut anchor = POINT {
+                x: old_plot.left,
+                y: old_plot.top,
+            };
+            ClientToScreen(hwnd, &mut anchor);
+            if !(*ptr).settings.frameless {
+                (*ptr).update_position(hwnd);
+            }
+            (*ptr).frame_changing = true;
+            if IsZoomed(hwnd) != 0 && IsWindowVisible(hwnd) != 0 {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            (*ptr).settings.frameless = !(*ptr).settings.frameless;
+            (*ptr).frame_plot = None;
+            let style = crate::window_style::with_frame(
+                GetWindowLongPtrW(hwnd, GWL_STYLE) as u32,
+                (*ptr).settings.frameless,
+            );
+            SetWindowLongPtrW(hwnd, GWL_STYLE, style as isize);
+            SetWindowPos(
+                hwnd,
+                null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOACTIVATE,
+            );
+            // Measure the actual Windows frame, including the window's real
+            // DPI. Test/layout DPI and Windows non-client DPI can differ.
+            let mut outer: RECT = zeroed();
+            let mut client: RECT = zeroed();
+            let mut origin = POINT { x: 0, y: 0 };
+            GetWindowRect(hwnd, &mut outer);
+            GetClientRect(hwnd, &mut client);
+            ClientToScreen(hwnd, &mut origin);
+            let border_width = outer.right - outer.left - client.right;
+            let border_height = outer.bottom - outer.top - client.bottom;
+            let left_border = origin.x - outer.left;
+            let top_border = origin.y - outer.top;
+            let preferred = (
+                (*ptr).px((*ptr).settings.normal_width as f64) - border_width,
+                (*ptr).px((*ptr).settings.normal_height as f64) - border_height,
+            );
+            let network = ((*ptr).available[3] && (*ptr).settings.visible[3])
+                || ((*ptr).available[4] && (*ptr).settings.visible[4]);
+            let latest = (*ptr).data.lock().unwrap().latest();
+            let dc = GetDC(hwnd);
+            let geometry = crate::layout::same_plot_geometry(
+                plot_width,
+                plot_height,
+                (*ptr).scale,
+                (*ptr).settings.frameless,
+                network,
+                preferred,
+                |width| (*ptr).normal_stats_fit(dc, latest, width),
+            );
+            ReleaseDC(hwnd, dc);
+            SetWindowPos(
+                hwnd,
+                null_mut(),
+                anchor.x - geometry.plot.left - left_border,
+                anchor.y - geometry.plot.top - top_border,
+                geometry.width + border_width,
+                geometry.height + border_height,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+            (*ptr).frame_plot = geometry.needs_padding.then_some(geometry.plot);
+            (*ptr).frame_changing = false;
+            (*ptr).update_position(hwnd);
+            (*ptr).render_now(hwnd);
+        }
+        308 => menu(hwnd, ptr),
+        _ => return,
+    }
+    (*ptr).save_settings();
+    InvalidateRect(hwnd, null(), 0);
+}
+
+unsafe fn menu(hwnd: HWND, ptr: *mut App) {
+    (*ptr).hover = None;
+    tooltip_hide(hwnd, ptr);
+    let menu = CreatePopupMenu();
+    let add = |id: usize, label: &str, checked: bool| {
+        AppendMenuW(
+            menu,
+            MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED },
+            id,
+            wide(label).as_ptr(),
+        );
+    };
+    add(305, tr("ウィンドウを表示"), false);
+    add(301, tr("常に手前に表示 (&T)"), (*ptr).settings.topmost);
+    add(
+        307,
+        tr("グラフだけ表示 (ダブルクリック / F11)"),
+        (*ptr).settings.frameless,
+    );
+    crate::packaged_startup::refresh();
+    add(
+        303,
+        tr("Windowsログオン時に起動"),
+        settings::startup_enabled(),
+    );
+    add(302, tr("トレイに格納"), false);
+    let languages = CreatePopupMenu();
+    if !languages.is_null() {
+        let append = |id: usize, name: &str, checked: bool| {
+            AppendMenuW(
+                languages,
+                MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED },
+                id,
+                wide(name).as_ptr(),
+            );
+        };
+        append(
+            400,
+            tr("Windowsに合わせる（自動）"),
+            (*ptr).settings.language.is_none(),
+        );
+        AppendMenuW(languages, MF_SEPARATOR, 0, null());
+        for (i, language) in i18n::LANGUAGES.iter().enumerate() {
+            append(
+                401 + i,
+                language.native_name(),
+                (*ptr).settings.language == Some(*language),
+            );
+        }
+        if AppendMenuW(
+            menu,
+            MF_POPUP,
+            languages as usize,
+            wide(tr("言語")).as_ptr(),
+        ) == 0
+        {
+            DestroyMenu(languages);
+        }
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    for (i, name) in range_labels().iter().enumerate() {
+        add(
+            101 + i,
+            &i18n::message("履歴: {}", name),
+            (*ptr).settings.range == i,
+        );
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    for (i, name) in names().iter().enumerate() {
+        if (*ptr).available[i] {
+            add(
+                201 + i,
+                &i18n::message("線を表示: {}", name),
+                (*ptr).settings.visible[i],
+            );
+        }
+    }
+    AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    add(304, tr("終了 (&X)"), false);
+    let mut pt: POINT = zeroed();
+    GetCursorPos(&mut pt);
+    SetForegroundWindow(hwnd);
+    let id = TrackPopupMenu(
+        menu,
+        TPM_RETURNCMD | TPM_RIGHTBUTTON,
+        pt.x,
+        pt.y,
+        0,
+        hwnd,
+        null(),
+    );
+    DestroyMenu(menu);
+    PostMessageW(hwnd, WM_NULL, 0, 0);
+    if id != 0 {
+        PostMessageW(hwnd, WM_COMMAND, id as usize, 0);
+    }
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    // Native tooltip notifications require no owner-state access. They may
+    // arrive synchronously while a control message is still on the stack.
+    if msg == WM_NOTIFY {
+        return 0;
+    }
     if msg == WM_NCCREATE {
         let create = &*(l as *const CREATESTRUCTW);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
@@ -704,19 +773,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
     if ptr.is_null() {
         return DefWindowProcW(hwnd, msg, w, l);
     }
-    let app = &mut *ptr;
-    if msg == app.taskbar_created {
-        app.tray_add(hwnd);
+    if msg == (*ptr).taskbar_created {
+        (*ptr).tray_add(hwnd);
         return 0;
     }
     match msg {
-        WM_NCCALCSIZE if app.settings.frameless => 0,
-        WM_NCHITTEST if app.settings.frameless => {
+        WM_NCCALCSIZE if (*ptr).settings.frameless => 0,
+        WM_NCHITTEST if (*ptr).settings.frameless => {
             let x = (l & 0xffff) as i16 as i32;
             let y = ((l >> 16) & 0xffff) as i16 as i32;
             let mut rect: RECT = zeroed();
             GetWindowRect(hwnd, &mut rect);
-            let grip = app.px(7.).max(5).min((rect.bottom - rect.top) / 3);
+            let grip = (*ptr).px(7.).max(5).min((rect.bottom - rect.top) / 3);
             let left = x < rect.left + grip;
             let right = x >= rect.right - grip;
             let top = y < rect.top + grip;
@@ -734,18 +802,18 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             }
         }
         WM_LBUTTONDBLCLK => {
-            app.drag_start = None;
+            (*ptr).drag_start = None;
             if GetCapture() == hwnd {
                 ReleaseCapture();
             }
             let x = (l & 0xffff) as i16 as i32;
             let y = ((l >> 16) & 0xffff) as i16 as i32;
-            if x >= app.plot.left
-                && x <= app.plot.right
-                && y >= app.plot.top
-                && y <= app.plot.bottom
+            if x >= (*ptr).plot.left
+                && x <= (*ptr).plot.right
+                && y >= (*ptr).plot.top
+                && y <= (*ptr).plot.bottom
             {
-                app.command(hwnd, 307);
+                command(hwnd, ptr, 307);
             }
             0
         }
@@ -755,39 +823,48 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             let dc = BeginPaint(hwnd, &mut ps);
             let mut r: RECT = zeroed();
             GetClientRect(hwnd, &mut r);
-            app.buffer.ensure(dc, r.right, r.bottom);
-            app.render(hwnd, app.buffer.dc, r.right, r.bottom);
-            app.paint_count += 1;
-            BitBlt(dc, 0, 0, r.right, r.bottom, app.buffer.dc, 0, 0, SRCCOPY);
+            (*ptr).buffer.ensure(dc, r.right, r.bottom);
+            (*ptr).render(hwnd, (*ptr).buffer.dc, r.right, r.bottom);
+            (*ptr).paint_count += 1;
+            BitBlt(dc, 0, 0, r.right, r.bottom, (*ptr).buffer.dc, 0, 0, SRCCOPY);
             EndPaint(hwnd, &ps);
             0
         }
         WM_GETMINMAXINFO => {
             let info = &mut *(l as *mut MINMAXINFO);
-            info.ptMinTrackSize = minimum_window_size(app.scale, app.settings.frameless);
+            info.ptMinTrackSize = minimum_window_size((*ptr).scale, (*ptr).settings.frameless);
             0
         }
         WM_SIZE => {
+            if !(*ptr).frame_changing {
+                (*ptr).frame_plot = None;
+            }
             if w as u32 == SIZE_MINIMIZED {
-                app.hide(hwnd);
+                hide(hwnd, ptr);
             } else {
-                if w as u32 == SIZE_RESTORED {
-                    app.update_position(hwnd);
+                if w as u32 == SIZE_RESTORED && !(*ptr).frame_changing {
+                    (*ptr).update_position(hwnd);
                 }
                 InvalidateRect(hwnd, null(), 0);
             }
             0
         }
         WM_DPICHANGED => {
-            if !app.forced_dpi {
-                app.scale = (w & 0xffff) as f64 / 96.;
+            (*ptr).frame_plot = None;
+            if !(*ptr).forced_dpi {
+                (*ptr).scale = (w & 0xffff) as f64 / 96.;
             }
-            let fonts = Fonts::new(app.scale);
-            if !app.tooltip.is_null() {
-                SendMessageW(app.tooltip, WM_SETFONT, fonts.small as usize, 0);
-                SendMessageW(app.tooltip, TTM_SETMAXTIPWIDTH, 0, app.px(560.) as isize);
+            let fonts = Fonts::new((*ptr).scale);
+            if !(*ptr).tooltip.is_null() {
+                SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
+                SendMessageW(
+                    (*ptr).tooltip,
+                    TTM_SETMAXTIPWIDTH,
+                    0,
+                    (*ptr).px(560.) as isize,
+                );
             }
-            app.fonts = fonts;
+            (*ptr).fonts = fonts;
             let r = &*(l as *const RECT);
             SetWindowPos(
                 hwnd,
@@ -801,16 +878,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_SETTINGCHANGE | WM_THEMECHANGED => {
-            app.theme(hwnd);
+            (*ptr).theme(hwnd);
             0
         }
         WM_EXITSIZEMOVE => {
-            app.update_position(hwnd);
-            app.save_settings();
+            (*ptr).update_position(hwnd);
+            (*ptr).save_settings();
             0
         }
         WM_LBUTTONDOWN => {
-            if app.settings.frameless {
+            if (*ptr).settings.frameless {
                 let mut p = POINT {
                     x: (l & 0xffff) as i16 as i32,
                     y: ((l >> 16) & 0xffff) as i16 as i32,
@@ -818,7 +895,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 ClientToScreen(hwnd, &mut p);
                 let mut rect: RECT = zeroed();
                 GetWindowRect(hwnd, &mut rect);
-                app.drag_start = Some(DragStart {
+                (*ptr).drag_start = Some(DragStart {
                     cursor: p,
                     rect,
                     moved: false,
@@ -828,19 +905,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_LBUTTONUP => {
-            let was_dragging = app.drag_start.is_some_and(|drag| drag.moved);
-            app.drag_start = None;
+            let was_dragging = (*ptr).drag_start.is_some_and(|drag| drag.moved);
+            (*ptr).drag_start = None;
             if GetCapture() == hwnd {
                 ReleaseCapture();
             }
             if was_dragging {
-                app.update_position(hwnd);
-                app.save_settings();
+                (*ptr).update_position(hwnd);
+                (*ptr).save_settings();
                 return 0;
             }
             let x = (l & 0xffff) as i16 as i32;
             let y = ((l >> 16) & 0xffff) as i16 as i32;
-            let command = app
+            let hit_command = (*ptr)
                 .hits
                 .iter()
                 .find(|hit| {
@@ -850,16 +927,16 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                         && y < hit.rect.bottom
                 })
                 .map(|h| h.command);
-            if let Some(command) = command {
-                app.command(hwnd, command);
+            if let Some(id) = hit_command {
+                command(hwnd, ptr, id);
             }
             0
         }
         WM_MOUSEMOVE => {
             if w & 0x0001 == 0 {
-                app.drag_start = None;
+                (*ptr).drag_start = None;
             }
-            if let Some(mut start) = app.drag_start {
+            if let Some(mut start) = (*ptr).drag_start {
                 let mut pos = POINT {
                     x: (l & 0xffff) as i16 as i32,
                     y: ((l >> 16) & 0xffff) as i16 as i32,
@@ -870,9 +947,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                     || (pos.y - start.cursor.y).abs() > GetSystemMetrics(SM_CYDRAG)
                 {
                     start.moved = true;
-                    app.drag_start = Some(start);
-                    app.hover = None;
-                    app.tooltip_hide(hwnd);
+                    (*ptr).drag_start = Some(start);
+                    (*ptr).hover = None;
+                    tooltip_hide(hwnd, ptr);
                     // Captured dragging never enters a blocking caption move loop.
                     SetWindowPos(
                         hwnd,
@@ -888,20 +965,20 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             }
             let x = (l & 0xffff) as i16 as i32;
             let y = ((l >> 16) & 0xffff) as i16 as i32;
-            let hover = if x >= app.plot.left
-                && x <= app.plot.right
-                && y >= app.plot.top
-                && y <= app.plot.bottom
+            let hover = if x >= (*ptr).plot.left
+                && x <= (*ptr).plot.right
+                && y >= (*ptr).plot.top
+                && y <= (*ptr).plot.bottom
             {
                 Some(x)
             } else {
                 None
             };
-            app.hover = hover;
+            (*ptr).hover = hover;
             if let Some(x) = hover {
-                app.tooltip_update(hwnd, x);
+                tooltip_update(hwnd, ptr, x);
             } else {
-                app.tooltip_hide(hwnd);
+                tooltip_hide(hwnd, ptr);
             }
             let mut track = TRACKMOUSEEVENT {
                 cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
@@ -913,43 +990,43 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_MOUSELEAVE => {
-            app.hover = None;
-            app.tooltip_hide(hwnd);
+            (*ptr).hover = None;
+            tooltip_hide(hwnd, ptr);
             0
         }
         WM_CAPTURECHANGED => {
-            app.drag_start = None;
+            (*ptr).drag_start = None;
             0
         }
         WM_CONTEXTMENU => {
-            app.drag_start = None;
-            app.tooltip_hide(hwnd);
-            app.menu(hwnd);
+            (*ptr).drag_start = None;
+            tooltip_hide(hwnd, ptr);
+            menu(hwnd, ptr);
             0
         }
         WM_KEYDOWN => {
             match w {
-                0x31..=0x35 => app.command(hwnd, 101 + w - 0x31),
-                0x54 => app.command(hwnd, 301),
+                0x31..=0x35 => command(hwnd, ptr, 101 + w - 0x31),
+                0x54 => command(hwnd, ptr, 301),
                 0x1b => {
-                    if app.settings.frameless {
-                        app.command(hwnd, 307);
+                    if (*ptr).settings.frameless {
+                        command(hwnd, ptr, 307);
                     } else {
-                        app.hide(hwnd);
+                        hide(hwnd, ptr);
                     }
                 }
-                0x7a => app.command(hwnd, 307),
-                0x5d | 0x79 => app.menu(hwnd),
+                0x7a => command(hwnd, ptr, 307),
+                0x5d | 0x79 => menu(hwnd, ptr),
                 _ => {}
             }
             0
         }
         WM_COMMAND => {
-            app.command(hwnd, w & 0xffff);
+            command(hwnd, ptr, w & 0xffff);
             0
         }
         WM_CLOSE => {
-            app.hide(hwnd);
+            hide(hwnd, ptr);
             0
         }
         WM_TIMER => {
@@ -962,36 +1039,36 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 );
             }
             if w == 1 {
-                if app.benchmark_render {
-                    app.render_now(hwnd);
+                if (*ptr).benchmark_render {
+                    (*ptr).render_now(hwnd);
                 } else {
                     InvalidateRect(hwnd, null(), 0);
                 }
-                if let Some(x) = app.hover {
-                    app.tooltip_update(hwnd, x);
+                if let Some(x) = (*ptr).hover {
+                    tooltip_update(hwnd, ptr, x);
                 }
             }
-            if app.test_ui && app.started.elapsed().as_secs() >= 3 {
-                app.test_ui = false;
+            if (*ptr).test_ui && (*ptr).started.elapsed().as_secs() >= 3 {
+                (*ptr).test_ui = false;
                 PostMessageW(hwnd, TEST_UI, 0, 0);
             }
-            if app.started.elapsed().as_secs() >= 5 {
-                if let Some(path) = app.snapshot.take() {
-                    app.render_now(hwnd);
+            if (*ptr).started.elapsed().as_secs() >= 5 {
+                if let Some(path) = (*ptr).snapshot.take() {
+                    (*ptr).render_now(hwnd);
                     if let Err(e) = save_bitmap(
-                        app.buffer.dc,
-                        app.buffer.bitmap,
-                        app.buffer.width,
-                        app.buffer.height,
+                        (*ptr).buffer.dc,
+                        (*ptr).buffer.bitmap,
+                        (*ptr).buffer.width,
+                        (*ptr).buffer.height,
                         &path,
                     ) {
-                        app.qa_errors.push(e.to_string());
+                        (*ptr).qa_errors.push(e.to_string());
                     }
                 }
             }
-            if app
+            if (*ptr)
                 .auto_exit
-                .is_some_and(|seconds| app.started.elapsed().as_secs() >= seconds)
+                .is_some_and(|seconds| (*ptr).started.elapsed().as_secs() >= seconds)
             {
                 DestroyWindow(hwnd);
             }
@@ -1001,36 +1078,38 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             match l as u32 {
                 WM_LBUTTONUP | WM_LBUTTONDBLCLK => {
                     if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
-                        app.show(hwnd);
+                        show(hwnd, ptr);
                     } else {
-                        app.hide(hwnd);
+                        hide(hwnd, ptr);
                     }
                 }
-                WM_RBUTTONUP => app.menu(hwnd),
+                WM_RBUTTONUP => menu(hwnd, ptr),
                 _ => {}
             }
             0
         }
         WM_DESTROY => {
-            app.update_position(hwnd);
-            app.save_settings();
-            Shell_NotifyIconW(NIM_DELETE, &app.tray);
+            (*ptr).update_position(hwnd);
+            (*ptr).save_settings();
+            Shell_NotifyIconW(NIM_DELETE, &(*ptr).tray);
             KillTimer(hwnd, 1);
             KillTimer(hwnd, 2);
-            if let Some(path) = &app.diagnostic {
-                let elapsed = app.started.elapsed().as_secs_f64();
-                let cpu = crate::process_cpu() - app.cpu_start;
+            if let Some(path) = &(*ptr).diagnostic {
+                let elapsed = (*ptr).started.elapsed().as_secs_f64();
+                let cpu = crate::process_cpu() - (*ptr).cpu_start;
                 let logical = std::thread::available_parallelism()
                     .map(|v| v.get())
                     .unwrap_or(1);
-                let text=format!("elapsed_s={elapsed:.3}\nprocess_cpu_s={cpu:.5}\none_core_percent={:.4}\nwhole_system_cpu_percent={:.5}\nlogical_processors={logical}\nworking_set_mib={:.3}\nsample_count={}\npaint_count={}\ngdi_objects={}\nqa_errors={}\n",cpu/elapsed*100.,cpu/elapsed*100./logical as f64,crate::working_set(),app.data.lock().unwrap().samples.len(),app.paint_count,GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS),app.qa_errors.len());
+                let text=format!("elapsed_s={elapsed:.3}\nprocess_cpu_s={cpu:.5}\none_core_percent={:.4}\nwhole_system_cpu_percent={:.5}\nlogical_processors={logical}\nworking_set_mib={:.3}\nsample_count={}\npaint_count={}\ngdi_objects={}\nqa_errors={}\n",cpu/elapsed*100.,cpu/elapsed*100./logical as f64,crate::working_set(),(*ptr).data.lock().unwrap().samples.len(),(*ptr).paint_count,GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS),(*ptr).qa_errors.len());
                 let _ = std::fs::write(path, text);
                 if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(path) {
                     use std::io::Write;
                     let _ = writeln!(
                         file,
                         "graph_seconds={:.6}\nline_seconds={:.6}\nframe_seconds={:.6}",
-                        app.profile_graph_s, app.profile_lines_s, app.profile_frame_s
+                        (*ptr).profile_graph_s,
+                        (*ptr).profile_lines_s,
+                        (*ptr).profile_frame_s
                     );
                 }
             }
@@ -1139,6 +1218,9 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             scale,
             fonts: Fonts::new(scale),
             buffer: BackBuffer::new(),
+            graph: Graph::default(),
+            frame_plot: None,
+            frame_changing: false,
             strokes: Default::default(),
             hits: Vec::new(),
             available: [false; 6],
@@ -1234,7 +1316,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 GetLastError()
             ));
         }
-        app.create_tooltip(hwnd);
+        create_tooltip(hwnd, GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut App);
         app.theme(hwnd);
         let tray_ok = app.tray_add(hwnd);
         if app.settings.topmost {
@@ -1258,7 +1340,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         let mut msg: MSG = zeroed();
         while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
             if msg.message == TEST_UI {
-                verification::run(hwnd, &mut *app as *mut App);
+                verification::run(hwnd, GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut App);
                 continue;
             }
             TranslateMessage(&msg);
