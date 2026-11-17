@@ -2,7 +2,7 @@
 
 ## 現在の状態
 
-SignPath Foundationの無料署名プログラムに申請しましたが、2026年11月17日に、公開プロジェクトとしての認知・利用実績が現時点では不足しているため不承認となりました。実績が増えた後の再申請は可能と案内されています。現在の配布EXEは未署名です。MITライセンスやアプリの機能に変更はありません。
+GitHub Releasesで配布するEXEは未署名です。
 
 ## プロジェクトと担当者
 
@@ -18,12 +18,6 @@ SignPath Foundationの無料署名プログラムに申請しましたが、2026
 署名対象は、このリポジトリのソースからGitHub Actionsの[Windows MSVC build](https://github.com/nekomimiyks/PerformanceGlass/actions/workflows/windows-build.yml)で生成する自作の `PerformanceGlass.exe` です。製品名は `Performance Glass`、製品バージョンは `Cargo.toml` のバージョンと一致させます。他プロジェクトのバイナリをこのプロジェクトの証明書で署名しません。
 
 承認後は、署名されたファイルを再検証してから、配布ZIP・EXE・ハッシュ一覧を更新します。署名鍵や認証情報をソースへ保存しません。
-
-サービスの承認後に掲示する表記:
-
-> Free code signing provided by SignPath.io, certificate by SignPath Foundation.
-
-これは承認後の表記案であり、現在提供を受けていることを示すものではありません。
 
 ## プライバシーとシステム変更
 

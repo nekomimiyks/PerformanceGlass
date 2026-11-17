@@ -13,7 +13,7 @@ Windows 10 / 11（x64）向けの軽量な常駐パフォーマンスモニタ�
 
 最新版のWindows用ZIPをすべて展開し、`PerformanceGlass.exe` を起動してください。インストール・管理者権限・追加ランタイムは不要です。[GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)
 
-GitHub版EXEは未署名です。Microsoft Store版は初回申請済みです。[Store版の詳細](store/README.md)
+GitHub版EXEは未署名です。[Microsoft Store版の詳細](store/README.md)
 
 ## スクリーンショット
 
