@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Performance Glass</title>
+  <desc>A luminous performance graph inside a midnight-blue glass pane.</desc>
+  <defs>
+    <linearGradient id="rim" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B7FFF1"/>
+      <stop offset=".48" stop-color="#48CFC9"/>
+      <stop offset="1" stop-color="#4D6EAF"/>
+    </linearGradient>
+    <linearGradient id="pane" x1="224" y1="160" x2="832" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#193F59"/>
+      <stop offset=".55" stop-color="#142B49"/>
+      <stop offset="1" stop-color="#15213B"/>
+    </linearGradient>
+    <linearGradient id="reflection" x1="288" y1="128" x2="576" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D4FFF7" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#D4FFF7" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="trace" x1="240" y1="656" x2="784" y2="352" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#35DCC9"/>
+      <stop offset="1" stop-color="#C6FFE6"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="224" fill="url(#rim)"/>
+  <rect x="96" y="96" width="832" height="832" rx="192" fill="url(#pane)"/>
+  <path d="M288 96H736C842.039 96 928 181.961 928 288V352L96 672V288C96 181.961 181.961 96 288 96Z" fill="url(#reflection)"/>
+  <path d="M240 528L400 656L552 544L784 656" stroke="#5F8FCB" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" opacity=".65"/>
+  <path d="M240 656L400 464L552 560L784 352" stroke="#142B49" stroke-width="112" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M240 656L400 464L552 560L784 352" stroke="url(#trace)" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
