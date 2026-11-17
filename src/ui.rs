@@ -523,6 +523,7 @@ impl App {
             "グラフだけ表示 (ダブルクリック / F11)",
             self.settings.frameless,
         );
+        crate::packaged_startup::refresh();
         add(303, "Windowsログオン時に起動", settings::startup_enabled());
         add(302, "トレイに格納", false);
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
@@ -902,6 +903,14 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_TIMER => {
+            if let Some(error) = crate::packaged_startup::take_error() {
+                MessageBoxW(
+                    hwnd,
+                    wide(&error).as_ptr(),
+                    wide("Performance Glass").as_ptr(),
+                    MB_ICONERROR,
+                );
+            }
             if w == 1 {
                 if app.benchmark_render {
                     app.render_now(hwnd);
@@ -1006,6 +1015,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         }
         let class_name = wide(CLASS);
         let owned_icon = make_icon(instance);
+        crate::packaged_startup::refresh();
         let icon = if owned_icon.is_null() {
             LoadIconW(null_mut(), IDI_APPLICATION)
         } else {
@@ -1202,7 +1212,14 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
 
 unsafe fn make_icon(instance: HINSTANCE) -> HICON {
     // Load an owned handle from the embedded, multi-resolution icon resource.
-    LoadImageW(instance, 101_usize as *const u16, IMAGE_ICON, 0, 0, LR_DEFAULTSIZE) as HICON
+    LoadImageW(
+        instance,
+        101_usize as *const u16,
+        IMAGE_ICON,
+        0,
+        0,
+        LR_DEFAULTSIZE,
+    ) as HICON
 }
 
 unsafe fn save_bitmap(

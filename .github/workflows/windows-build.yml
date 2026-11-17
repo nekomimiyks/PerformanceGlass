@@ -26,6 +26,7 @@ jobs:
           $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory | Sort-Object Name -Descending | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'x64\rc.exe') } | Select-Object -First 1
           if (-not $sdk) { throw 'Windows SDK resource compiler not found' }
           "RC=$(Join-Path $sdk.FullName 'x64\rc.exe')" >> $env:GITHUB_ENV
+          "MAKEAPPX=$(Join-Path $sdk.FullName 'x64\makeappx.exe')" >> $env:GITHUB_ENV
           rustup toolchain install stable --profile minimal --target x86_64-pc-windows-msvc
           if ($LASTEXITCODE -ne 0) { throw 'Rust installation failed' }
       - name: Test and build
@@ -60,6 +61,11 @@ jobs:
           (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() + '  PerformanceGlass.exe' | Set-Content -LiteralPath SHA256SUMS.txt
           (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $zip | Add-Content -LiteralPath SHA256SUMS.txt
           @("Commit: $env:GITHUB_SHA", 'Target: x86_64-pc-windows-msvc', 'CRT: static', 'Authenticode: unsigned', (rustc +stable -V)) | Set-Content -LiteralPath build-info.txt
+      - name: Package for Microsoft Store
+        shell: pwsh
+        run: |
+          .\build-msix.ps1 -OutputDirectory (Join-Path $PWD 'dist')
+          if ($LASTEXITCODE -ne 0) { throw 'MSIX packaging failed' }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: PerformanceGlass-msvc
@@ -68,4 +74,5 @@ jobs:
             PerformanceGlass-*-Windows-MSVC.zip
             SHA256SUMS.txt
             build-info.txt
+            dist/PerformanceGlass-*-x64.msix
           retention-days: 14

@@ -96,6 +96,9 @@ impl Settings {
     }
 }
 pub fn startup_enabled() -> bool {
+    if crate::packaged_startup::is_packaged() {
+        return crate::packaged_startup::enabled();
+    }
     let mut size = 0;
     unsafe {
         RegGetValueW(
@@ -110,6 +113,9 @@ pub fn startup_enabled() -> bool {
     }
 }
 pub fn set_startup(enabled: bool) -> Result<(), String> {
+    if crate::packaged_startup::is_packaged() {
+        return crate::packaged_startup::set(enabled);
+    }
     unsafe {
         let mut key = null_mut();
         let status = RegCreateKeyExW(

@@ -17,6 +17,8 @@ Assetsの `PerformanceGlass-v0.1.8-Windows-MSVC.zip` を展開し、`Performance
 
 このリポジトリ直下の `PerformanceGlass.exe` も同じ配布用ファイルです。
 
+Microsoft Store版は登録・提出の準備中です。現時点では未公開で、GitHubの配布EXEは未署名です。[MSIXのビルド手順](store/README.md)と[プライバシーポリシー](docs/privacy.md)を公開しています。
+
 ### v0.1.8の変更
 
 Windows標準のMSVCツールチェーンによる比較版です。GitHub ActionsのWindows環境でソースからビルドし、単体テストとUI検証を実行しています。C/C++ランタイムはEXEに静的リンクしており、追加のランタイム導入は不要です。

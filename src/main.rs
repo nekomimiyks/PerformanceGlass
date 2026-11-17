@@ -3,6 +3,7 @@ mod history;
 mod label_layout;
 mod layout;
 mod metrics;
+mod packaged_startup;
 mod sensors;
 mod settings;
 mod ui;

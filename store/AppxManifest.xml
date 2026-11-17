@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
+         xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap uap10 desktop rescap">
+  <Identity Name="PerformanceGlass.Unassigned" Publisher="CN=5AE6A6DC-E993-473F-B455-E28AB21B84A6" Version="0.1.9.0" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>PerformanceGlass</DisplayName>
+    <PublisherDisplayName>nekomimiyks</PublisherDisplayName>
+    <Description>軽量なWindows常駐パフォーマンスモニター</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources><Resource Language="ja-jp" /></Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Applications>
+    <Application Id="App" Executable="PerformanceGlass.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="PerformanceGlass" Description="軽量なWindows常駐パフォーマンスモニター"
+                          Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" BackgroundColor="transparent" />
+      <Extensions>
+        <desktop:Extension Category="windows.startupTask" Executable="PerformanceGlass.exe" EntryPoint="Windows.FullTrustApplication" uap10:Parameters="--tray">
+          <desktop:StartupTask TaskId="PerformanceGlassStartup" Enabled="false" DisplayName="PerformanceGlass" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities><rescap:Capability Name="runFullTrust" /></Capabilities>
+</Package>
