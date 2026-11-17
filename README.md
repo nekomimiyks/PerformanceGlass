@@ -17,7 +17,7 @@ Assetsの `PerformanceGlass-v0.1.8-Windows-MSVC.zip` を展開し、`Performance
 
 このリポジトリ直下の `PerformanceGlass.exe` も同じ配布用ファイルです。
 
-Microsoft Store版は登録・提出の準備中です。現時点では未公開で、GitHubの配布EXEは未署名です。[MSIXのビルド手順](store/README.md)と[プライバシーポリシー](docs/privacy.md)を公開しています。
+Microsoft Store版（v0.1.10）は2026年11月18日（日本時間）に初回申請を送信し、現在は認定中です。認定に合格すると無料で公開されます。現時点では未公開で、GitHubの配布EXEは未署名です。Storeで配布されるMSIXには認定後にMicrosoft側の署名が適用されます。[MSIXのビルド手順と申請状況](store/README.md)、[プライバシーポリシー](docs/privacy.md)を公開しています。
 
 ### v0.1.8の変更
 
