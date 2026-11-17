@@ -13,9 +13,15 @@ Windows 10 / 11（64bit）向けの軽量な常駐パフォーマンスモニタ
 
 **[最新版をダウンロード（GitHub Releases）](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)**
 
-Assetsの `PerformanceGlass-v0.1.6-Windows.zip` を展開し、`PerformanceGlass.exe` をダブルクリックしてください。EXE単体でも起動できます。インストール・管理者権限・追加ランタイムは不要です。
+Assetsの `PerformanceGlass-v0.1.7-Windows.zip` を展開し、`PerformanceGlass.exe` をダブルクリックしてください。EXE単体でも起動できます。インストール・管理者権限・追加ランタイムは不要です。
 
 このリポジトリ直下の `PerformanceGlass.exe` も同じ配布用ファイルです。
+
+### v0.1.7の変更
+
+EXEに通常ユーザー権限での実行を明示するマニフェストと、製品名・開発者名・ファイルバージョンを追加しました。計測・温度取得・グラフ・常駐・自動起動など、アプリの機能は変更していません。
+
+この変更は電子署名の追加ではありません。セキュリティーソフトや端末の管理ポリシーによる起動制限が解除されることを保証するものではありません。
 
 ## スクリーンショット
 
@@ -89,7 +95,7 @@ Windowsのライト／ダーク設定に自動で合わせます。画像はア�
 
 ## ビルド・テスト
 
-Rust stable（x86_64-pc-windows-gnu）とPowerShellを使用します。
+Rust stable（x86_64-pc-windows-gnu）・PowerShell・MinGWのリソースコンパイラー `windres.exe` を使用します。リソースコンパイラーは開発時のみ必要です。MinGWのbinをPATHに追加するか、環境変数 `WINDRES` に実行ファイルのパスを指定してください。
 
 ```powershell
 .\build.ps1
