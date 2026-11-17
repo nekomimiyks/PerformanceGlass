@@ -10,6 +10,7 @@ fn wide(s: &str) -> Vec<u16> {
 }
 #[derive(Clone)]
 pub struct Settings {
+    pub language: Option<crate::i18n::Language>,
     pub range: usize,
     pub visible: [bool; 6],
     pub topmost: bool,
@@ -24,6 +25,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: None,
             range: 0,
             visible: [true; 6],
             topmost: false,
@@ -44,11 +46,15 @@ fn path() -> PathBuf {
 }
 impl Settings {
     pub fn load() -> Self {
+        Self::from_text(&fs::read_to_string(path()).unwrap_or_default())
+    }
+    fn from_text(text: &str) -> Self {
         let mut s = Self::default();
-        if let Ok(text) = fs::read_to_string(path()) {
+        {
             for line in text.lines() {
                 if let Some((key, value)) = line.split_once('=') {
                     match key {
+                        "language" => s.language = crate::i18n::Language::from_tag(value),
                         "range" => s.range = value.parse::<usize>().unwrap_or(0).min(4),
                         "visible" => {
                             for (i, c) in value.chars().take(6).enumerate() {
@@ -79,20 +85,23 @@ impl Settings {
         if let Some(parent) = p.parent() {
             let _ = fs::create_dir_all(parent);
         }
-        let visible: String = self
-            .visible
-            .iter()
-            .map(|v| if *v { '1' } else { '0' })
-            .collect();
-        let content = format!(
-            "range={}\nvisible={}\ntopmost={}\nframeless={}\nwidth={}\nheight={}\nnormal_width={}\nnormal_height={}\nx={}\ny={}\n",
-            self.range, visible, self.topmost as u8, self.frameless as u8, self.width, self.height,self.normal_width,self.normal_height,self.x,self.y
-        );
+        let content = self.to_text();
         // Write only on user changes and exit, never during sampling.
         let tmp = p.with_extension("tmp");
         if fs::write(&tmp, content).is_ok() {
             let _ = fs::rename(tmp, p);
         }
+    }
+    fn to_text(&self) -> String {
+        let visible: String = self
+            .visible
+            .iter()
+            .map(|v| if *v { '1' } else { '0' })
+            .collect();
+        format!(
+            "language={}\nrange={}\nvisible={}\ntopmost={}\nframeless={}\nwidth={}\nheight={}\nnormal_width={}\nnormal_height={}\nx={}\ny={}\n",
+            self.language.map(|v| v.tag()).unwrap_or("auto"), self.range, visible, self.topmost as u8, self.frameless as u8, self.width, self.height,self.normal_width,self.normal_height,self.x,self.y
+        )
     }
 }
 pub fn startup_enabled() -> bool {
@@ -165,5 +174,27 @@ pub fn set_startup(enabled: bool) -> Result<(), String> {
                 crate::i18n::tr("自動起動を変更できません")
             ))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn language_setting_roundtrip_and_old_settings() {
+        for preference in std::iter::once(None).chain(crate::i18n::LANGUAGES.map(Some)) {
+            let settings = Settings {
+                language: preference,
+                range: 3,
+                topmost: true,
+                ..Settings::default()
+            };
+            let loaded = Settings::from_text(&settings.to_text());
+            assert_eq!(loaded.language, preference);
+            assert_eq!(loaded.range, 3);
+            assert!(loaded.topmost);
+        }
+        assert_eq!(Settings::from_text("range=2\n").language, None);
+        assert_eq!(Settings::from_text("language=invalid\n").language, None);
     }
 }

@@ -1,5 +1,5 @@
 //! Embedded UI translations. No resource files, network, or per-frame locale queries.
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use windows_sys::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,7 +18,6 @@ pub enum Language {
     Ru,
     Id,
 }
-#[cfg(test)]
 pub const LANGUAGES: [Language; 12] = [
     Language::Ja,
     Language::En,
@@ -33,7 +32,7 @@ pub const LANGUAGES: [Language; 12] = [
     Language::Ru,
     Language::Id,
 ];
-static LANGUAGE: OnceLock<Language> = OnceLock::new();
+static LANGUAGE: AtomicUsize = AtomicUsize::new(Language::En as usize);
 impl Language {
     pub fn from_tag(tag: &str) -> Option<Self> {
         let tag = tag.replace('_', "-").to_ascii_lowercase();
@@ -65,10 +64,25 @@ impl Language {
             _ => return None,
         })
     }
-    #[cfg(test)]
     pub fn tag(self) -> &'static str {
         [
             "ja", "en", "zh-Hans", "zh-Hant", "ko", "de", "fr", "es", "pt", "it", "ru", "id",
+        ][self as usize]
+    }
+    pub fn native_name(self) -> &'static str {
+        [
+            "日本語",
+            "English",
+            "简体中文",
+            "繁體中文",
+            "한국어",
+            "Deutsch",
+            "Français",
+            "Español",
+            "Português",
+            "Italiano",
+            "Русский",
+            "Bahasa Indonesia",
         ][self as usize]
     }
 }
@@ -107,7 +121,8 @@ fn detect() -> Language {
     }
 }
 pub fn init(args: &[String]) {
-    // Override is only for isolated demo/UI checks; normal use always follows Windows.
+    // CLI override is only for isolated demo/UI checks. Normal use applies
+    // the saved menu preference when loading Settings in ui::run.
     let isolated = args
         .iter()
         .any(|s| matches!(s.as_str(), "--demo" | "--test-ui"));
@@ -119,16 +134,24 @@ pub fn init(args: &[String]) {
                 .and_then(|s| Language::from_tag(s))
         })
         .flatten();
-    let _ = LANGUAGE.set(override_language.unwrap_or_else(detect));
+    select(override_language);
+}
+pub fn select(preference: Option<Language>) {
+    LANGUAGE.store(
+        preference.unwrap_or_else(detect) as usize,
+        Ordering::Relaxed,
+    );
 }
 pub fn language() -> Language {
-    *LANGUAGE.get_or_init(detect)
+    LANGUAGES[LANGUAGE.load(Ordering::Relaxed)]
 }
 pub fn tr(key: &str) -> &str {
     translate(language(), key)
 }
 pub fn translate(language: Language, key: &str) -> &str {
     let row = match key {
+        "言語" => &["言語", "Language", "语言", "語言", "언어", "Sprache", "Langue", "Idioma", "Idioma", "Lingua", "Язык", "Bahasa"] as &[&str; 12],
+        "Windowsに合わせる（自動）" => &["Windowsに合わせる（自動）", "Follow Windows (automatic)", "跟随 Windows（自动）", "跟隨 Windows（自動）", "Windows 설정에 따름 (자동)", "Windows folgen (automatisch)", "Suivre Windows (automatique)", "Seguir Windows (automático)", "Seguir Windows (automático)", "Segui Windows (automatico)", "Как в Windows (автоматически)", "Ikuti Windows (otomatis)"] as &[&str; 12],
         "トレイに格納" => &["トレイに格納","Minimize to tray","最小化到托盘","縮小至通知區域","알림 영역으로 최소화","In Infobereich minimieren","Réduire dans la zone de notification","Minimizar a la bandeja","Minimizar para a bandeja","Riduci nell'area di notifica","Свернуть в область уведомлений","Minimalkan ke baki"] as &[&str; 12],
         "{}前" => &["{}前","{} ago","{}前","{}前","{} 전","vor {}","il y a {}","hace {}","há {}","{} fa","{} назад","{} lalu"] as &[&str; 12],
         "専用" => &["専用","dedicated","专用","專用","전용","dediziert","dédiée","dedicada","dedicada","dedicata","выделенная","khusus"] as &[&str; 12],
@@ -222,6 +245,15 @@ mod tests {
     }
     #[test]
     fn every_translation_is_present_and_keeps_placeholders() {
+        for lang in LANGUAGES {
+            for key in ["言語", "Windowsに合わせる（自動）"] {
+                assert!(!translate(lang, key).is_empty());
+                if lang != Language::Ja {
+                    assert_ne!(translate(lang, key), key);
+                }
+            }
+            assert!(!lang.native_name().is_empty());
+        }
         let keys = ["トレイに格納", "{}前", "専用", "受信", "送信", "通信の目盛り上限", "送受信合計", "メモリ", "ディスク", "1分", "10分", "60分", "6時間", "12時間", "使用率", "速度", "温度", "使用量", "読み込み", "書き込み", "稼働率", "受信 Mbps", "送信 Mbps", "接続状態", "未接続", "GPUメモリ", "設定 ···", "見本データ", "使用率 %", "通信 Mbps", "現在", "計測を準備しています…", "（見本）", "時間", "分", "秒", "ウィンドウを表示", "常に手前に表示 (&T)", "グラフだけ表示 (ダブルクリック / F11)", "Windowsログオン時に起動", "終了 (&X)", "クリックして表示", "履歴: {}", "線を表示: {}", "読込", "書込", "通信の目盛り上限 {} Mbps（送受信合計）", "ディスク: 稼働率は最大、読み書きは全物理ディスク合計", "自動起動を変更できません。Windowsの「設定 → アプリ → スタートアップ」も確認してください。", "自動起動の設定処理中です。少し待ってから再度お試しください。", "自動起動の設定を開けません", "自動起動を変更できません", "アプリの起動ロックを作成できません。", "ウィンドウを登録できません", "ウィンドウを作成できません"];
         for lang in LANGUAGES {
             assert_eq!(Language::from_tag(lang.tag()), Some(lang));

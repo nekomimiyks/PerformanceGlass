@@ -424,6 +424,22 @@ impl App {
     }
     unsafe fn command(&mut self, hwnd: HWND, id: usize) {
         match id {
+            400..=412 => {
+                self.settings.language = id
+                    .checked_sub(401)
+                    .and_then(|i| i18n::LANGUAGES.get(i))
+                    .copied();
+                i18n::select(self.settings.language);
+                self.hover = None;
+                self.tooltip_hide(hwnd);
+                let fonts = Fonts::new(self.scale);
+                SendMessageW(self.tooltip, WM_SETFONT, fonts.small as usize, 0);
+                self.fonts = fonts;
+                let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
+                self.tray.szTip.fill(0);
+                self.tray.szTip[..tip.len()].copy_from_slice(&tip);
+                Shell_NotifyIconW(NIM_MODIFY, &self.tray);
+            }
             101..=105 => {
                 self.settings.range = id - 101;
                 self.hover = None;
@@ -533,6 +549,39 @@ impl App {
             settings::startup_enabled(),
         );
         add(302, tr("トレイに格納"), false);
+        let languages = CreatePopupMenu();
+        if !languages.is_null() {
+            let append = |id: usize, name: &str, checked: bool| {
+                AppendMenuW(
+                    languages,
+                    MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED },
+                    id,
+                    wide(name).as_ptr(),
+                );
+            };
+            append(
+                400,
+                tr("Windowsに合わせる（自動）"),
+                self.settings.language.is_none(),
+            );
+            AppendMenuW(languages, MF_SEPARATOR, 0, null());
+            for (i, language) in i18n::LANGUAGES.iter().enumerate() {
+                append(
+                    401 + i,
+                    language.native_name(),
+                    self.settings.language == Some(*language),
+                );
+            }
+            if AppendMenuW(
+                menu,
+                MF_POPUP,
+                languages as usize,
+                wide(tr("言語")).as_ptr(),
+            ) == 0
+            {
+                DestroyMenu(languages);
+            }
+        }
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
         for (i, name) in range_labels().iter().enumerate() {
             add(
@@ -1064,6 +1113,9 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         } else {
             Settings::load()
         };
+        if !test_mode {
+            i18n::select(settings.language);
+        }
         if args.iter().any(|s| s == "--frameless") {
             settings.frameless = true;
         }

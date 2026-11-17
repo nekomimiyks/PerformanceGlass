@@ -209,6 +209,27 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
         }
     }
     let before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    let saved_language = crate::i18n::language();
+    let saved_preference = (*ptr).settings.language;
+    for _ in 0..2 {
+        for (i, language) in crate::i18n::LANGUAGES.iter().enumerate() {
+            SendMessageW(hwnd, WM_COMMAND, 401 + i, 0);
+            if crate::i18n::language() != *language || (*ptr).settings.language != Some(*language) {
+                (*ptr)
+                    .qa_errors
+                    .push("language command did not apply".into());
+            }
+            (*ptr).render_now(hwnd);
+        }
+    }
+    SendMessageW(hwnd, WM_COMMAND, 400, 0);
+    if (*ptr).settings.language.is_some() {
+        (*ptr)
+            .qa_errors
+            .push("automatic language command did not apply".into());
+    }
+    SendMessageW(hwnd, WM_COMMAND, 401 + saved_language as usize, 0);
+    (*ptr).settings.language = saved_preference;
     let user_before = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
     for _ in 0..20 {
         SendMessageW(hwnd, WM_THEMECHANGED, 0, 0);
