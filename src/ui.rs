@@ -995,11 +995,18 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let instance = GetModuleHandleW(null());
-        let mutex = CreateMutexW(
-            null(),
-            0,
-            wide("Local\\PerformanceGlass.Native.Singleton").as_ptr(),
-        );
+        let test_mode = args.iter().any(|s| {
+            matches!(
+                s.as_str(),
+                "--demo" | "--snapshot" | "--diagnostic" | "--test-ui" | "--qa-dir"
+            )
+        });
+        let mutex_name = if test_mode {
+            format!("Local\\PerformanceGlass.Native.QA.{}", std::process::id())
+        } else {
+            "Local\\PerformanceGlass.Native.Singleton".into()
+        };
+        let mutex = CreateMutexW(null(), 0, wide(&mutex_name).as_ptr());
         if mutex.is_null() {
             return Err("アプリの起動ロックを作成できません。".into());
         }
@@ -1047,12 +1054,6 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
         };
-        let test_mode = args.iter().any(|s| {
-            matches!(
-                s.as_str(),
-                "--demo" | "--snapshot" | "--diagnostic" | "--test-ui" | "--qa-dir"
-            )
-        });
         let mut settings = if test_mode {
             Settings::default()
         } else {

@@ -19,6 +19,11 @@ unsafe fn double_click_graph(hwnd: HWND, ptr: *mut App) {
     }
 }
 pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
+    if crate::packaged_startup::is_packaged() && !crate::packaged_startup::query_succeeded() {
+        (*ptr)
+            .qa_errors
+            .push("packaged startup task query failed or timed out".into());
+    }
     let saved_scale = (*ptr).scale;
     let saved_theme = (*ptr).theme_override;
     let mut original: RECT = zeroed();

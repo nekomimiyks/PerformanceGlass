@@ -2,7 +2,7 @@
 use std::{
     ptr::null_mut,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI32, Ordering},
         mpsc::{sync_channel, SyncSender},
         Mutex, OnceLock,
     },
@@ -19,6 +19,7 @@ extern "system" {
 }
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
+static QUERY_STATUS: AtomicI32 = AtomicI32::new(0);
 static ERROR: Mutex<Option<String>> = Mutex::new(None);
 static WORKER: OnceLock<Result<SyncSender<Option<bool>>, String>> = OnceLock::new();
 
@@ -45,6 +46,7 @@ fn worker() -> Result<&'static SyncSender<Option<bool>>, String> {
                 let initialized = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
                 while let Ok(change) = receiver.recv() {
                     let result = initialized.clone().and_then(|_| update(change));
+                    QUERY_STATUS.store(if result.is_ok() { 1 } else { -1 }, Ordering::Relaxed);
                     match result {
                         Ok(enabled) => ENABLED.store(enabled, Ordering::Relaxed),
                         Err(error) if change.is_some() => {
@@ -97,4 +99,8 @@ pub fn set(enabled: bool) -> Result<(), String> {
 
 pub fn take_error() -> Option<String> {
     ERROR.lock().unwrap().take()
+}
+
+pub fn query_succeeded() -> bool {
+    QUERY_STATUS.load(Ordering::Relaxed) == 1
 }
