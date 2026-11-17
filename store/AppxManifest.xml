@@ -5,14 +5,27 @@
          xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
          xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
          IgnorableNamespaces="uap uap10 desktop rescap">
-  <Identity Name="PerformanceGlass.Unassigned" Publisher="CN=5AE6A6DC-E993-473F-B455-E28AB21B84A6" Version="0.1.10.0" ProcessorArchitecture="x64" />
+  <Identity Name="PerformanceGlass.Unassigned" Publisher="CN=5AE6A6DC-E993-473F-B455-E28AB21B84A6" Version="0.1.11.0" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>PerformanceGlass</DisplayName>
     <PublisherDisplayName>nekomimiyks</PublisherDisplayName>
     <Description>軽量なWindows常駐パフォーマンスモニター</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
-  <Resources><Resource Language="ja-jp" /></Resources>
+  <Resources>
+    <Resource Language="ja-jp" />
+    <Resource Language="en-us" />
+    <Resource Language="zh-cn" />
+    <Resource Language="zh-tw" />
+    <Resource Language="ko-kr" />
+    <Resource Language="de-de" />
+    <Resource Language="fr-fr" />
+    <Resource Language="es-es" />
+    <Resource Language="pt-br" />
+    <Resource Language="it-it" />
+    <Resource Language="ru-ru" />
+    <Resource Language="id-id" />
+  </Resources>
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>

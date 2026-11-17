@@ -2,8 +2,19 @@ use std::collections::VecDeque;
 
 pub const CAPACITY: usize = 43_201;
 pub const RANGES: [u64; 5] = [60, 600, 3600, 21600, 43200];
-pub const RANGE_LABELS: [&str; 5] = ["1分", "10分", "60分", "6時間", "12時間"];
-pub const NAMES: [&str; 6] = ["CPU", "メモリ", "ディスク", "Ethernet", "Wi-Fi", "GPU"];
+pub fn range_labels() -> [&'static str; 5] {
+    ["1分", "10分", "60分", "6時間", "12時間"].map(crate::i18n::tr)
+}
+pub fn names() -> [&'static str; 6] {
+    [
+        "CPU",
+        crate::i18n::tr("メモリ"),
+        crate::i18n::tr("ディスク"),
+        "Ethernet",
+        "Wi-Fi",
+        "GPU",
+    ]
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Sample {

@@ -1,3 +1,4 @@
+use crate::i18n::{self, tr};
 use crate::{
     history::*,
     metrics,
@@ -100,7 +101,7 @@ struct Fonts {
 }
 impl Fonts {
     unsafe fn new(scale: f64) -> Self {
-        let font = |size: f64, weight: i32| {
+        let font = |size: f64, weight: i32, face: &str| {
             CreateFontW(
                 -(size * scale).round() as i32,
                 0,
@@ -115,14 +116,16 @@ impl Fonts {
                 0,
                 CLEARTYPE_QUALITY as u32,
                 0,
-                wide("Yu Gothic UI").as_ptr(),
+                wide(face).as_ptr(),
             )
         };
         Self {
-            small: font(11., 400),
-            normal: font(12., 400),
-            compact: font((11. * scale).min(12.) / scale, 400),
-            title_tiny: font(10. / scale, 400),
+            small: font(11., 400, i18n::font_name()),
+            normal: font(12., 400, i18n::font_name()),
+            compact: font((11. * scale).min(12.) / scale, 400, i18n::font_name()),
+            // Compact trace names are shared Latin abbreviations, with identical
+            // metrics in every language so all six fit in 280 physical pixels.
+            title_tiny: font(10. / scale, 400, "Segoe UI"),
         }
     }
 }
@@ -398,7 +401,7 @@ impl App {
         self.tray.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         self.tray.uCallbackMessage = TRAY_MESSAGE;
         self.tray.hIcon = self.icon;
-        let tip = wide("Performance Glass — クリックして表示");
+        let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
         self.tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_ADD, &self.tray) != 0
     }
@@ -516,32 +519,40 @@ impl App {
                 wide(label).as_ptr(),
             );
         };
-        add(305, "ウィンドウを表示", false);
-        add(301, "常に手前に表示 (&T)", self.settings.topmost);
+        add(305, tr("ウィンドウを表示"), false);
+        add(301, tr("常に手前に表示 (&T)"), self.settings.topmost);
         add(
             307,
-            "グラフだけ表示 (ダブルクリック / F11)",
+            tr("グラフだけ表示 (ダブルクリック / F11)"),
             self.settings.frameless,
         );
         crate::packaged_startup::refresh();
-        add(303, "Windowsログオン時に起動", settings::startup_enabled());
-        add(302, "トレイに格納", false);
+        add(
+            303,
+            tr("Windowsログオン時に起動"),
+            settings::startup_enabled(),
+        );
+        add(302, tr("トレイに格納"), false);
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        for (i, name) in RANGE_LABELS.iter().enumerate() {
-            add(101 + i, &format!("{name}の履歴"), self.settings.range == i);
+        for (i, name) in range_labels().iter().enumerate() {
+            add(
+                101 + i,
+                &i18n::message("履歴: {}", name),
+                self.settings.range == i,
+            );
         }
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        for (i, name) in NAMES.iter().enumerate() {
+        for (i, name) in names().iter().enumerate() {
             if self.available[i] {
                 add(
                     201 + i,
-                    &format!("{name}の線を表示"),
+                    &i18n::message("線を表示: {}", name),
                     self.settings.visible[i],
                 );
             }
         }
         AppendMenuW(menu, MF_SEPARATOR, 0, null());
-        add(304, "終了 (&X)", false);
+        add(304, tr("終了 (&X)"), false);
         let mut pt: POINT = zeroed();
         GetCursorPos(&mut pt);
         SetForegroundWindow(hwnd);
@@ -617,32 +628,22 @@ impl App {
 
 fn format_age(s: u64) -> String {
     if s >= 3600 {
-        format!("{}時間{}分", s / 3600, s % 3600 / 60)
+        format!("{}{} {}{}", s / 3600, tr("時間"), s % 3600 / 60, tr("分"))
     } else if s >= 60 {
-        format!("{}分{}秒", s / 60, s % 60)
+        format!("{}{} {}{}", s / 60, tr("分"), s % 60, tr("秒"))
     } else {
-        format!("{s}秒")
+        format!("{s}{}", tr("秒"))
     }
 }
 fn format_duration(s: u64) -> String {
-    format!(
-        "−{}",
-        if s >= 3600 {
-            if s % 3600 == 0 {
-                format!("{}時間", s / 3600)
-            } else {
-                format!("{}時間{}分", s / 3600, s % 3600 / 60)
-            }
-        } else if s >= 60 {
-            if s % 60 == 0 {
-                format!("{}分", s / 60)
-            } else {
-                format!("{}分{}秒", s / 60, s % 60)
-            }
-        } else {
-            format!("{s}秒")
-        }
-    )
+    let value = if s >= 3600 && s % 3600 == 0 {
+        format!("{}{}", s / 3600, tr("時間"))
+    } else if s >= 60 && s % 60 == 0 {
+        format!("{}{}", s / 60, tr("分"))
+    } else {
+        format_age(s)
+    };
+    format!("−{value}")
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
@@ -1008,7 +1009,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         };
         let mutex = CreateMutexW(null(), 0, wide(&mutex_name).as_ptr());
         if mutex.is_null() {
-            return Err("アプリの起動ロックを作成できません。".into());
+            return Err(tr("アプリの起動ロックを作成できません。").into());
         }
         if GetLastError() == ERROR_ALREADY_EXISTS {
             let existing = FindWindowW(wide(CLASS).as_ptr(), null());
@@ -1042,7 +1043,11 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 DestroyIcon(owned_icon);
             }
             CloseHandle(mutex);
-            return Err(format!("ウィンドウを登録できません ({})", GetLastError()));
+            return Err(format!(
+                "{} ({})",
+                tr("ウィンドウを登録できません"),
+                GetLastError()
+            ));
         }
         InitCommonControlsEx(&INITCOMMONCONTROLSEX {
             dwSize: size_of::<INITCOMMONCONTROLSEX>() as u32,
@@ -1171,7 +1176,11 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 DestroyIcon(owned_icon);
             }
             CloseHandle(mutex);
-            return Err(format!("ウィンドウを作成できません ({})", GetLastError()));
+            return Err(format!(
+                "{} ({})",
+                tr("ウィンドウを作成できません"),
+                GetLastError()
+            ));
         }
         app.create_tooltip(hwnd);
         app.theme(hwnd);

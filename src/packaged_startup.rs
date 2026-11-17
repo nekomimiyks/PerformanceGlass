@@ -50,7 +50,7 @@ fn worker() -> Result<&'static SyncSender<Option<bool>>, String> {
                     match result {
                         Ok(enabled) => ENABLED.store(enabled, Ordering::Relaxed),
                         Err(error) if change.is_some() => {
-                            *ERROR.lock().unwrap() = Some(format!("自動起動を変更できません。Windowsの「設定 → アプリ → スタートアップ」も確認してください。\n{error}"));
+                            *ERROR.lock().unwrap() = Some(format!("{}\n{error}", crate::i18n::tr("自動起動を変更できません。Windowsの「設定 → アプリ → スタートアップ」も確認してください。")));
                         }
                         Err(_) => {}
                     }
@@ -92,9 +92,9 @@ pub fn refresh() {
 }
 
 pub fn set(enabled: bool) -> Result<(), String> {
-    worker()?
-        .try_send(Some(enabled))
-        .map_err(|_| "自動起動の設定処理中です。少し待ってから再度お試しください。".into())
+    worker()?.try_send(Some(enabled)).map_err(|_| {
+        crate::i18n::tr("自動起動の設定処理中です。少し待ってから再度お試しください。").into()
+    })
 }
 
 pub fn take_error() -> Option<String> {

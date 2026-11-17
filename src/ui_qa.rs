@@ -200,8 +200,8 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
         let text = (*ptr).hover_text((*ptr).plot.right).unwrap_or_default();
         if !text.contains("62°C")
             || !text.contains("25.8MB/s")
-            || !text.contains("書込")
-            || !text.contains("GPUメモリ 4.20 GiB")
+            || !text.contains(crate::i18n::tr("書き込み"))
+            || !text.contains(&format!("{} 4.20 GiB", crate::i18n::tr("GPUメモリ")))
         {
             (*ptr)
                 .qa_errors

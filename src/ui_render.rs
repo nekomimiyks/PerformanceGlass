@@ -1,4 +1,5 @@
 use super::*;
+use crate::i18n::{self, tr};
 use crate::layout::Layout;
 
 #[derive(Default)]
@@ -56,65 +57,65 @@ impl App {
             };
             match i {
                 0 => {
-                    add("使用率", s.values[0], format!("{:.1} %", s.values[0]));
+                    add(tr("使用率"), s.values[0], format!("{:.1} %", s.values[0]));
                     if !compact {
-                        add("速度", s.ghz, format!("{:.2} GHz", s.ghz));
+                        add(tr("速度"), s.ghz, format!("{:.2} GHz", s.ghz));
                     }
                     add(
-                        "温度",
+                        tr("温度"),
                         s.temperatures[0],
                         format!("{:.0} °C", s.temperatures[0]),
                     );
                 }
                 1 => {
-                    add("使用率", s.values[1], format!("{:.1} %", s.values[1]));
+                    add(tr("使用率"), s.values[1], format!("{:.1} %", s.values[1]));
                     if !compact && s.memory_total > 0. {
                         fields.push((
-                            "使用量",
+                            tr("使用量"),
                             format!("{:.1} / {:.1} GiB", s.memory_used, s.memory_total),
                         ));
                     }
                 }
                 2 => {
                     add(
-                        "読み込み",
+                        tr("読み込み"),
                         s.disk_io[0],
                         format!("{:.1} MB/s", s.disk_io[0]),
                     );
                     add(
-                        "書き込み",
+                        tr("書き込み"),
                         s.disk_io[1],
                         format!("{:.1} MB/s", s.disk_io[1]),
                     );
                     if !s.disk_io.iter().any(|v| v.is_finite()) {
-                        add("稼働率", s.values[2], format!("{:.1} %", s.values[2]));
+                        add(tr("稼働率"), s.values[2], format!("{:.1} %", s.values[2]));
                     }
                 }
                 3 | 4 => {
                     if s.connected[i - 3] {
                         add(
-                            "受信 Mbps",
+                            tr("受信 Mbps"),
                             s.traffic[i - 3][0],
                             format!("{:.2}", s.traffic[i - 3][0]),
                         );
                         add(
-                            "送信 Mbps",
+                            tr("送信 Mbps"),
                             s.traffic[i - 3][1],
                             format!("{:.2}", s.traffic[i - 3][1]),
                         );
                     } else if s.traffic[i - 3][0].is_finite() {
-                        fields.push(("接続状態", "未接続".into()));
+                        fields.push((tr("接続状態"), tr("未接続").into()));
                     }
                 }
                 _ => {
-                    add("使用率", s.values[5], format!("{:.1} %", s.values[5]));
+                    add(tr("使用率"), s.values[5], format!("{:.1} %", s.values[5]));
                     add(
-                        "GPUメモリ",
+                        tr("GPUメモリ"),
                         s.gpu_memory,
                         format!("{:.2} GiB", s.gpu_memory),
                     );
                     add(
-                        "温度",
+                        tr("温度"),
                         s.temperatures[1],
                         format!("{:.0} °C", s.temperatures[1]),
                     );
@@ -136,7 +137,7 @@ impl App {
                 .sum::<i32>()
                 + self.px(10.) * (fields.len() as i32 - 1);
             let width = content_width
-                .max(self.measure(dc, NAMES[i], self.fonts.small) + self.px(15.))
+                .max(self.measure(dc, names()[i], self.fonts.small) + self.px(15.))
                 + self.px(18.);
             groups.push(Group {
                 series: i,
@@ -204,7 +205,7 @@ impl App {
             let bh = self.px(27.);
             let bw = self.px(54.);
             if w >= self.px(470.) {
-                for (i, label) in RANGE_LABELS.iter().enumerate() {
+                for (i, label) in range_labels().iter().enumerate() {
                     let r = RECT {
                         left: self.px(7.) + i as i32 * bw,
                         top: y,
@@ -241,7 +242,7 @@ impl App {
                 self.fill(dc, r, p.selected);
                 self.text(
                     dc,
-                    &format!("{}  ▾", RANGE_LABELS[self.settings.range]),
+                    &format!("{}  ▾", range_labels()[self.settings.range]),
                     r,
                     self.fonts.small,
                     p.text,
@@ -252,13 +253,16 @@ impl App {
                     command: 308,
                 });
             }
+            let settings_width = (self.measure(dc, tr("設定 ···"), self.fonts.small)
+                + self.px(12.))
+            .max(self.px(56.));
             let r = RECT {
-                left: w - self.px(62.),
+                left: w - self.px(6.) - settings_width,
                 top: y,
                 right: w - self.px(6.),
                 bottom: y + bh,
             };
-            self.text(dc, "設定 ···", r, self.fonts.small, p.muted, DT_CENTER);
+            self.text(dc, tr("設定 ···"), r, self.fonts.small, p.muted, DT_CENTER);
             self.hits.push(Hit {
                 rect: r,
                 command: 306,
@@ -266,10 +270,10 @@ impl App {
             if self.demo && w > self.px(530.) {
                 self.label(
                     dc,
-                    "見本データ",
+                    tr("見本データ"),
                     self.px(300.),
                     y,
-                    w - self.px(375.),
+                    (r.left - self.px(308.)).max(0),
                     bh,
                     self.fonts.small,
                     p.muted,
@@ -321,7 +325,7 @@ impl App {
         if layout.axes {
             self.label(
                 dc,
-                "使用率 %",
+                tr("使用率 %"),
                 plot.left,
                 plot.top - self.px(16.),
                 self.px(80.),
@@ -332,7 +336,7 @@ impl App {
             if has_network {
                 self.text(
                     dc,
-                    "通信 Mbps",
+                    tr("通信 Mbps"),
                     RECT {
                         left: plot.right - self.px(95.),
                         top: plot.top - self.px(16.),
@@ -400,7 +404,7 @@ impl App {
             );
             if layout.axes {
                 let label = if tick == ticks {
-                    "現在".into()
+                    tr("現在").into()
                 } else {
                     format_duration(range * (ticks - tick) as u64 / ticks as u64)
                 };
@@ -537,7 +541,7 @@ impl App {
         let title_enabled: [bool; 6] =
             std::array::from_fn(|i| active[i] && graph.buckets.iter().any(|b| b[i].count > 0));
         let mut title_font = axis_font;
-        let mut title_names = &NAMES;
+        let mut title_names = &names();
         let mut title_widths = std::array::from_fn(|i| {
             if title_enabled[i] {
                 self.measure(dc, title_names[i], title_font) + 2
@@ -651,7 +655,7 @@ impl App {
                 );
                 self.label(
                     dc,
-                    NAMES[s],
+                    names()[s],
                     x + self.px(21.),
                     top + self.px(4.),
                     width - self.px(24.),
@@ -726,7 +730,7 @@ impl App {
         {
             self.text(
                 dc,
-                "計測を準備しています…",
+                tr("計測を準備しています…"),
                 plot,
                 self.fonts.small,
                 p.muted,
@@ -749,9 +753,9 @@ impl App {
             return None;
         }
         let mut rows = vec![format!(
-            "{}前{}",
-            format_age((end - s.time).max(0.) as u64),
-            if self.demo { "（見本）" } else { "" }
+            "{}{}",
+            i18n::message("{}前", &format_age((end - s.time).max(0.) as u64)),
+            if self.demo { tr("（見本）") } else { "" }
         )];
         for i in 0..6 {
             if !self.available[i] {
@@ -761,17 +765,21 @@ impl App {
             if s.values[i].is_finite() && i != 3 && i != 4 {
                 fields.push(format!(
                     "{} {:.1}%",
-                    if i == 2 { "稼働率" } else { "使用率" },
+                    if i == 2 {
+                        tr("稼働率")
+                    } else {
+                        tr("使用率")
+                    },
                     s.values[i]
                 ));
             }
             match i {
                 0 => {
                     if s.ghz.is_finite() {
-                        fields.push(format!("速度 {:.2}GHz", s.ghz));
+                        fields.push(format!("{} {:.2}GHz", tr("速度"), s.ghz));
                     }
                     if s.temperatures[0].is_finite() {
-                        fields.push(format!("温度 {:.0}°C", s.temperatures[0]));
+                        fields.push(format!("{} {:.0}°C", tr("温度"), s.temperatures[0]));
                     }
                 }
                 1 => {
@@ -781,47 +789,56 @@ impl App {
                 }
                 2 => {
                     if s.disk_io[0].is_finite() {
-                        fields.push(format!("読込 {:.1}MB/s", s.disk_io[0]));
+                        fields.push(format!("{} {:.1}MB/s", tr("読み込み"), s.disk_io[0]));
                     }
                     if s.disk_io[1].is_finite() {
-                        fields.push(format!("書込 {:.1}MB/s", s.disk_io[1]));
+                        fields.push(format!("{} {:.1}MB/s", tr("書き込み"), s.disk_io[1]));
                     }
                 }
                 3 | 4 => {
                     if s.traffic[i - 3][0].is_finite() {
                         fields.push(if s.connected[i - 3] {
                             format!(
-                                "受信 {:.2} / 送信 {:.2} Mbps",
+                                "{} {:.2} / {} {:.2} Mbps",
+                                tr("受信"),
                                 s.traffic[i - 3][0],
+                                tr("送信"),
                                 s.traffic[i - 3][1]
                             )
                         } else {
-                            "未接続".into()
+                            tr("未接続").into()
                         });
                     }
                 }
                 5 => {
                     if s.gpu_memory.is_finite() {
-                        fields.push(format!("GPUメモリ {:.2} GiB（専用）", s.gpu_memory));
+                        fields.push(format!(
+                            "{} {:.2} GiB ({})",
+                            tr("GPUメモリ"),
+                            s.gpu_memory,
+                            tr("専用")
+                        ));
                     }
                     if s.temperatures[1].is_finite() {
-                        fields.push(format!("温度 {:.0}°C", s.temperatures[1]));
+                        fields.push(format!("{} {:.0}°C", tr("温度"), s.temperatures[1]));
                     }
                 }
                 _ => {}
             }
             if !fields.is_empty() {
-                rows.push(format!("{}   {}", NAMES[i], fields.join("  ")));
+                rows.push(format!("{}   {}", names()[i], fields.join("  ")));
             }
         }
         if self.available[3] || self.available[4] {
             rows.push(format!(
-                "通信の目盛り上限 {:.2} Mbps（送受信合計）",
-                self.network_top
+                "{} {:.2} Mbps ({})",
+                tr("通信の目盛り上限"),
+                self.network_top,
+                tr("送受信合計")
             ));
         }
         if s.disk_io[0].is_finite() || s.disk_io[1].is_finite() {
-            rows.push("ディスク: 稼働率は最大、読み書きは全物理ディスク合計".into());
+            rows.push(tr("ディスク: 稼働率は最大、読み書きは全物理ディスク合計").into());
         }
         Some(rows.join("\n"))
     }

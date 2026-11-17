@@ -130,7 +130,10 @@ pub fn set_startup(enabled: bool) -> Result<(), String> {
             null_mut(),
         );
         if status != 0 {
-            return Err(format!("自動起動の設定を開けません ({status})"));
+            return Err(format!(
+                "{} ({status})",
+                crate::i18n::tr("自動起動の設定を開けません")
+            ));
         }
         let status = if enabled {
             match std::env::current_exe() {
@@ -157,7 +160,10 @@ pub fn set_startup(enabled: bool) -> Result<(), String> {
         if status == 0 || (!enabled && status == 2) {
             Ok(())
         } else {
-            Err(format!("自動起動を変更できません ({status})"))
+            Err(format!(
+                "{} ({status})",
+                crate::i18n::tr("自動起動を変更できません")
+            ))
         }
     }
 }

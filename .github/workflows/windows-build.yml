@@ -44,14 +44,16 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $exe = Join-Path $PWD 'package\PerformanceGlass.exe'
-          $qa = Join-Path $env:RUNNER_TEMP 'PerformanceGlass-ui'
-          New-Item -ItemType Directory -Path $qa -Force | Out-Null
-          $process = Start-Process -FilePath $exe -ArgumentList @('--demo','--test-ui','--qa-dir', ('"' + $qa + '"'),'--exit-after','8') -WindowStyle Hidden -PassThru
-          if (-not $process.WaitForExit(45000)) { $process.Kill(); throw 'UI checks timed out' }
-          if ($process.ExitCode -ne 0) { throw 'UI checks crashed' }
-          $report = Get-Content -LiteralPath (Join-Path $qa 'ui-checks.txt') -Raw
-          Write-Output $report
-          if ($report -notmatch 'UI検証: 成功') { throw 'UI checks failed' }
+          foreach ($language in @('ja','en','zh-Hans','zh-Hant','ko','de','fr','es','pt','it','ru','id')) {
+            $qa = Join-Path $env:RUNNER_TEMP ('PerformanceGlass-ui-' + $language)
+            New-Item -ItemType Directory -Path $qa -Force | Out-Null
+            $process = Start-Process -FilePath $exe -ArgumentList @('--demo','--test-ui','--language',$language,'--qa-dir', ('"' + $qa + '"'),'--exit-after','8') -WindowStyle Hidden -PassThru
+            if (-not $process.WaitForExit(45000)) { $process.Kill(); throw "UI checks timed out: $language" }
+            if ($process.ExitCode -ne 0) { throw "UI checks crashed: $language" }
+            $report = Get-Content -LiteralPath (Join-Path $qa 'ui-checks.txt') -Raw
+            Write-Output "$language : $report"
+            if ($report -notmatch 'UI検証: 成功') { throw "UI checks failed: $language" }
+          }
           Copy-Item -LiteralPath LICENSE,THIRD_PARTY_NOTICES.txt -Destination package
           Copy-Item -LiteralPath packaging\README.txt -Destination package\README.txt
           $version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod history;
+mod i18n;
 mod label_layout;
 mod layout;
 mod metrics;
@@ -19,6 +20,7 @@ use std::{
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    i18n::init(&args);
     if let Some(i) = args.iter().position(|s| s == "--probe") {
         let count = args
             .get(i + 1)
