@@ -35,9 +35,11 @@ GitHub版EXEは未署名です。[Microsoft Store版の詳細](store/README.md)
 
 履歴はメモリに最大約12時間分を保持し、終了すると消えます。
 
-## ビルド
+## ソースからビルドする場合
 
-PowerShellとRustを使用します。GNU版にはMinGWの `windres.exe`、MSVC版にはC++ Build ToolsとWindows SDKが必要です。
+以下の開発ツールは、ソースからEXEを作る場合にだけ必要です。配布ZIPのEXEは展開してそのまま使えます。
+
+PowerShellとRustに加え、GNU版はMinGW（`windres.exe`を含む）、MSVC版はC++ Build ToolsとWindows SDKを用意してください。
 
 ```powershell
 .\build.ps1
