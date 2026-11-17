@@ -1,0 +1,6 @@
+/target/
+/dist/
+/verification/
+/release-assets/
+*.pdb
+*.log
