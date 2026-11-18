@@ -11,9 +11,12 @@ fn wide(s: &str) -> Vec<u16> {
 #[derive(Clone)]
 pub struct Settings {
     pub language: Option<crate::i18n::Language>,
+    pub taskbar_metric: Option<usize>,
+    pub cpu_permission: crate::cpu_sensor::Permission,
     pub range: usize,
     pub visible: [bool; 6],
     pub topmost: bool,
+    pub tray_enabled: bool,
     pub frameless: bool,
     pub width: i32,
     pub height: i32,
@@ -26,9 +29,12 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             language: None,
+            taskbar_metric: Some(0),
+            cpu_permission: crate::cpu_sensor::Permission::Ask,
             range: 0,
             visible: [true; 6],
             topmost: false,
+            tray_enabled: false,
             frameless: false,
             width: 960,
             height: 480,
@@ -55,6 +61,21 @@ impl Settings {
                 if let Some((key, value)) = line.split_once('=') {
                     match key {
                         "language" => s.language = crate::i18n::Language::from_tag(value),
+                        "cpu_permission" => {
+                            s.cpu_permission = crate::cpu_sensor::Permission::parse(value)
+                        }
+                        "taskbar_metric" => {
+                            s.taskbar_metric = if value == "off" {
+                                None
+                            } else {
+                                Some(
+                                    crate::taskbar_graph::METRICS
+                                        .iter()
+                                        .position(|m| m.key == value)
+                                        .unwrap_or(0),
+                                )
+                            };
+                        }
                         "range" => s.range = value.parse::<usize>().unwrap_or(0).min(4),
                         "visible" => {
                             for (i, c) in value.chars().take(6).enumerate() {
@@ -62,11 +83,12 @@ impl Settings {
                             }
                         }
                         "topmost" => s.topmost = value == "1",
+                        "tray_enabled" => s.tray_enabled = value == "1",
                         "frameless" => s.frameless = value == "1",
-                        "width" => s.width = value.parse::<i32>().unwrap_or(960).clamp(180, 7680),
+                        "width" => s.width = value.parse::<i32>().unwrap_or(960).clamp(1, 7680),
                         "height" => s.height = value.parse::<i32>().unwrap_or(480).clamp(12, 4320),
                         "normal_width" => {
-                            s.normal_width = value.parse::<i32>().unwrap_or(960).clamp(180, 7680)
+                            s.normal_width = value.parse::<i32>().unwrap_or(960).clamp(1, 7680)
                         }
                         "normal_height" => {
                             s.normal_height = value.parse::<i32>().unwrap_or(480).clamp(280, 4320)
@@ -99,8 +121,10 @@ impl Settings {
             .map(|v| if *v { '1' } else { '0' })
             .collect();
         format!(
-            "language={}\nrange={}\nvisible={}\ntopmost={}\nframeless={}\nwidth={}\nheight={}\nnormal_width={}\nnormal_height={}\nx={}\ny={}\n",
-            self.language.map(|v| v.tag()).unwrap_or("auto"), self.range, visible, self.topmost as u8, self.frameless as u8, self.width, self.height,self.normal_width,self.normal_height,self.x,self.y
+            "language={}\nrange={}\nvisible={}\ntopmost={}\nframeless={}\nwidth={}\nheight={}\nnormal_width={}\nnormal_height={}\nx={}\ny={}\ntaskbar_metric={}\ncpu_permission={}\ntray_enabled={}\n",
+            self.language.map(|v| v.tag()).unwrap_or("auto"), self.range, visible, self.topmost as u8, self.frameless as u8, self.width, self.height,self.normal_width,self.normal_height,self.x,self.y,
+            self.taskbar_metric.map_or("off", |index| crate::taskbar_graph::METRICS[index].key),
+            self.cpu_permission.key(), self.tray_enabled as u8
         )
     }
 }
@@ -121,9 +145,12 @@ pub fn startup_enabled() -> bool {
         ) == 0
     }
 }
-pub fn set_startup(enabled: bool) -> Result<(), String> {
+pub fn set_startup(
+    enabled: bool,
+    owner: windows_sys::Win32::Foundation::HWND,
+) -> Result<(), String> {
     if crate::packaged_startup::is_packaged() {
-        return crate::packaged_startup::set(enabled);
+        return crate::packaged_startup::set(enabled, owner);
     }
     unsafe {
         let mut key = null_mut();
@@ -180,6 +207,40 @@ pub fn set_startup(enabled: bool) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn compact_width_survives_roundtrip_at_high_dpi() {
+        let settings = Settings {
+            width: 70, // 280 physical pixels at 400% scaling.
+            normal_width: 140,
+            ..Settings::default()
+        };
+        let restored = Settings::from_text(&settings.to_text());
+        assert_eq!(restored.width, 70);
+        assert_eq!(restored.normal_width, 140);
+    }
+    #[test]
+    fn taskbar_choice_position_and_sensor_permission_survive_restart() {
+        use crate::cpu_sensor::Permission;
+        for (metric, permission) in [(Some(15), Permission::Allow), (None, Permission::Deny)] {
+            let settings = Settings {
+                x: -450,
+                y: 180,
+                taskbar_metric: metric,
+                cpu_permission: permission,
+                tray_enabled: true,
+                ..Settings::default()
+            };
+            let loaded = Settings::from_text(&settings.to_text());
+            assert_eq!((loaded.x, loaded.y), (-450, 180));
+            assert_eq!(loaded.taskbar_metric, metric);
+            assert_eq!(loaded.cpu_permission, permission);
+            assert!(loaded.tray_enabled);
+        }
+        let previous = Settings::from_text("width=300\n");
+        assert_eq!(previous.taskbar_metric, Some(0));
+        assert_eq!(previous.cpu_permission, Permission::Ask);
+        assert!(!previous.tray_enabled);
+    }
     #[test]
     fn language_setting_roundtrip_and_old_settings() {
         for preference in std::iter::once(None).chain(crate::i18n::LANGUAGES.map(Some)) {

@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod cpu_sensor;
 mod history;
 mod i18n;
 mod label_layout;
@@ -7,6 +8,7 @@ mod metrics;
 mod packaged_startup;
 mod sensors;
 mod settings;
+mod taskbar_graph;
 mod ui;
 mod window_style;
 

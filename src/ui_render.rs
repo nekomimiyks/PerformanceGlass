@@ -171,8 +171,15 @@ impl App {
             self.palette.bg,
         );
         self.hits.clear();
-        let latest = self.data.lock().unwrap().latest();
-        let now = metrics::now();
+        let range = RANGES[self.settings.range];
+        let (latest, now, end, chart_available) = {
+            let history = self.data.lock().unwrap();
+            let latest = history.latest();
+            let now = metrics::now();
+            let end = if self.demo { latest.time } else { now };
+            (latest, now, end, history.plotted_since(end - range as f64))
+        };
+        self.chart_available = chart_available;
         let available_now = std::array::from_fn::<_, 6, _>(|i| {
             latest.values[i].is_finite()
                 || match i {
@@ -205,7 +212,7 @@ impl App {
         }
         let stats_fit =
             !groups.is_empty() && groups.iter().map(|g| g.width).sum::<i32>() <= width_available;
-        let active = std::array::from_fn(|i| self.available[i] && self.settings.visible[i]);
+        let active = std::array::from_fn(|i| chart_available[i] && self.settings.visible[i]);
         let has_network = active[3] || active[4];
         let mut layout = Layout::new(
             w,
@@ -323,8 +330,6 @@ impl App {
         if plot.right <= plot.left || plot.bottom <= plot.top {
             return;
         }
-        let range = RANGES[self.settings.range];
-        let end = if self.demo { latest.time } else { now };
         self.chart_end = end;
         let graph_start = Instant::now();
         self.graph.reset_buckets((plot.right - plot.left) as usize);
@@ -334,6 +339,15 @@ impl App {
         };
         self.graph.finish_network(&active, maximum);
         let graph = &self.graph;
+        let pixel_span = (plot.right - plot.left - 1).max(0);
+        let bucket_span = (graph.buckets.len() - 1) as i64;
+        let x_offset = |column: usize| {
+            if i64::from(pixel_span) == bucket_span {
+                column as i32
+            } else {
+                ((column as i64 * i64::from(pixel_span) + bucket_span / 2) / bucket_span) as i32
+            }
+        };
         self.profile_graph_s += graph_start.elapsed().as_secs_f64();
         // Expand immediately; require 30 seconds before a lower throughput scale.
         if self.network_range != self.settings.range || graph.network_top > self.network_top {
@@ -506,7 +520,7 @@ impl App {
                     continue;
                 }
                 let pt = POINT {
-                    x: plot.left + x as i32,
+                    x: plot.left + x_offset(x),
                     y: y(b.sum / b.count as f32),
                 };
                 if previous_time.is_some_and(|time| b.first_time - time >= 2.5) {
@@ -607,15 +621,13 @@ impl App {
             if !title_enabled[series] {
                 continue;
             }
-            let title_x = ((title_lefts[series] + title_widths[series] / 2 - plot.left).max(0)
-                as usize)
-                .min(graph.buckets.len().saturating_sub(1));
+            let title_x = title_lefts[series] + title_widths[series] / 2 - plot.left;
             if let Some((_, bucket)) = graph
                 .buckets
                 .iter()
                 .enumerate()
                 .filter_map(|(x, b)| (b[series].count > 0).then_some((x, b[series])))
-                .min_by_key(|(x, _)| x.abs_diff(title_x))
+                .min_by_key(|(x, _)| x_offset(*x).abs_diff(title_x))
             {
                 let ceiling = if series == 3 || series == 4 {
                     network_top
@@ -775,7 +787,8 @@ impl App {
         let end = self.chart_end;
         let range = RANGES[self.settings.range];
         let target = end - range as f64
-            + (x - self.plot.left) as f64 / (self.plot.right - self.plot.left) as f64
+            + ((x - self.plot.left) as f64 / (self.plot.right - self.plot.left - 1).max(1) as f64)
+                .min(1.)
                 * range as f64;
         let s = self.data.lock().unwrap().nearest(target)?;
         if (s.time - target).abs() > 2.5 {
@@ -787,9 +800,6 @@ impl App {
             if self.demo { tr("（見本）") } else { "" }
         )];
         for i in 0..6 {
-            if !self.available[i] {
-                continue;
-            }
             let mut fields = Vec::new();
             if s.values[i].is_finite() && i != 3 && i != 4 {
                 fields.push(format!(
@@ -858,7 +868,7 @@ impl App {
                 rows.push(format!("{}   {}", names()[i], fields.join("  ")));
             }
         }
-        if self.available[3] || self.available[4] {
+        if (3..=4).any(|i| self.chart_available[i] && self.settings.visible[i]) {
             rows.push(format!(
                 "{} {:.2} Mbps ({})",
                 tr("通信の目盛り上限"),

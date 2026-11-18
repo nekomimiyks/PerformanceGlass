@@ -1,8 +1,10 @@
 use crate::i18n::{self, tr};
 use crate::{
+    cpu_sensor::{self, Permission, Poll},
     history::*,
     metrics,
     settings::{self, Settings},
+    taskbar_graph::{self, Frame, METRICS},
 };
 use std::{
     mem::{size_of, zeroed},
@@ -208,6 +210,7 @@ struct App {
     strokes: rendering::StrokeBuffer,
     hits: Vec<Hit>,
     available: [bool; 6],
+    chart_available: [bool; 6],
     availability_until: [f64; 6],
     chart_end: f64,
     network_top: f32,
@@ -217,7 +220,17 @@ struct App {
     hover: Option<i32>,
     tray: NOTIFYICONDATAW,
     icon: HICON,
+    graph_icon: HICON,
+    icon_frame: Option<(Frame, u32, u32)>,
+    cpu_reader: Option<cpu_sensor::Reader>,
+    cpu_installer: Option<std::os::windows::io::OwnedHandle>,
+    cpu_install_attempted: bool,
+    cpu_elevated: bool,
+    cpu_manual: bool,
+    cpu_helper: bool,
     taskbar_created: u32,
+    taskbar_button_created: u32,
+    taskbar: Option<taskbar_graph::Taskbar>,
     snapshot: Option<String>,
     test_ui: bool,
     started: Instant,
@@ -326,12 +339,19 @@ impl App {
         self.theme_updating = false;
     }
     unsafe fn tray_add(&mut self, hwnd: HWND) -> bool {
+        if !self.settings.tray_enabled {
+            return false;
+        }
         self.tray.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
         self.tray.hWnd = hwnd;
         self.tray.uID = 1;
         self.tray.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
         self.tray.uCallbackMessage = TRAY_MESSAGE;
-        self.tray.hIcon = self.icon;
+        self.tray.hIcon = if self.graph_icon.is_null() {
+            self.icon
+        } else {
+            self.graph_icon
+        };
         let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
         self.tray.szTip[..tip.len()].copy_from_slice(&tip);
         Shell_NotifyIconW(NIM_ADD, &self.tray) != 0
@@ -494,14 +514,24 @@ unsafe fn tooltip_update(hwnd: HWND, ptr: *mut App, x: i32) {
 }
 
 unsafe fn hide(hwnd: HWND, ptr: *mut App) {
+    if IsWindowVisible(hwnd) != 0 {
+        (*ptr).update_position(hwnd);
+        (*ptr).save_settings();
+    }
     (*ptr).hover = None;
     tooltip_hide(hwnd, ptr);
-    KillTimer(hwnd, 1);
     // Never leave an unreachable hidden process when the notification area rejects an icon.
-    if Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray) != 0 || (*ptr).tray_add(hwnd) {
+    if (*ptr).settings.tray_enabled
+        && (Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray) != 0 || (*ptr).tray_add(hwnd))
+    {
         ShowWindow(hwnd, SW_HIDE);
+        if (*ptr).settings.taskbar_metric.is_none() {
+            KillTimer(hwnd, 1);
+        }
     } else {
-        ShowWindow(hwnd, SW_MINIMIZE);
+        if IsIconic(hwnd) == 0 {
+            ShowWindow(hwnd, SW_MINIMIZE);
+        }
     }
 }
 
@@ -512,10 +542,195 @@ unsafe fn show(hwnd: HWND, _ptr: *mut App) {
     InvalidateRect(hwnd, null(), 0);
 }
 
+unsafe fn update_taskbar_icon(hwnd: HWND, ptr: *mut App) {
+    let frame = (*ptr).settings.taskbar_metric.and_then(|index| {
+        let metric = METRICS[index];
+        let colors = &(*ptr).palette;
+        let history = (*ptr).data.lock().unwrap();
+        Frame::from_history(&history, metric)
+            .map(|frame| (frame, colors.bg, colors.lines[metric.color()]))
+    });
+    if frame == (*ptr).icon_frame {
+        return;
+    }
+    let graph = match frame {
+        Some((frame, bg, line)) => {
+            let icon = frame.create_icon(bg, line);
+            if icon.is_null() {
+                return;
+            }
+            icon
+        }
+        None => null_mut(),
+    };
+    let old = std::mem::replace(&mut (*ptr).graph_icon, graph);
+    (*ptr).icon_frame = frame;
+    let icon = if graph.is_null() { (*ptr).icon } else { graph };
+    if (*ptr).settings.tray_enabled {
+        (*ptr).tray.hIcon = icon;
+        let mut update = (*ptr).tray;
+        update.uFlags = NIF_ICON;
+        Shell_NotifyIconW(NIM_MODIFY, &update);
+    }
+    update_taskbar_button(hwnd, ptr);
+    if !old.is_null() {
+        DestroyIcon(old);
+    }
+}
+
+unsafe fn update_taskbar_button(hwnd: HWND, ptr: *mut App) {
+    if let Some(taskbar) = (*ptr).taskbar.as_ref() {
+        taskbar.set_graph(
+            windows::Win32::Foundation::HWND(hwnd),
+            (*ptr).graph_icon,
+            (*ptr).settings.taskbar_metric.map(|index| METRICS[index]),
+        );
+    }
+}
+
+unsafe fn cpu_message(hwnd: HWND, ja: &str, en: &str) {
+    let message = if i18n::language() == i18n::Language::Ja {
+        ja
+    } else {
+        en
+    };
+    MessageBoxW(
+        hwnd,
+        wide(message).as_ptr(),
+        wide("Performance Glass").as_ptr(),
+        MB_ICONINFORMATION,
+    );
+}
+
+unsafe fn start_cpu_sensor(hwnd: HWND, ptr: *mut App, elevated: bool) -> bool {
+    match cpu_sensor::Reader::start(hwnd, elevated) {
+        Ok(reader) => {
+            (*ptr).cpu_reader = Some(reader);
+            (*ptr).cpu_elevated = elevated;
+            SetTimer(hwnd, 3, 1000, None);
+            true
+        }
+        Err(error) => {
+            if (*ptr).cpu_manual && error.raw_os_error() != Some(ERROR_CANCELLED as i32) {
+                cpu_message(
+                    hwnd,
+                    &format!("CPU温度の計測を開始できません。\n{error}"),
+                    &format!("Could not start CPU temperature monitoring.\n{error}"),
+                );
+            }
+            false
+        }
+    }
+}
+
+unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
+    if let Some(installer) = (*ptr).cpu_installer.as_ref() {
+        let result = cpu_sensor::installer_exit(installer);
+        if matches!(result, Ok(None)) {
+            return;
+        }
+        (*ptr).cpu_installer = None;
+        KillTimer(hwnd, 3);
+        match result {
+            Ok(Some(0)) => {
+                start_cpu_sensor(hwnd, ptr, false);
+            }
+            Ok(Some(3010 | 1641)) => cpu_message(
+                hwnd,
+                "再起動後にCPU温度の計測を有効にしてください。",
+                "Enable CPU temperature monitoring after restarting Windows.",
+            ),
+            Ok(Some(code)) if code == ERROR_CANCELLED => {}
+            result => cpu_message(
+                hwnd,
+                &format!("PawnIOのセットアップが完了しませんでした。\n{result:?}"),
+                &format!("PawnIO setup did not complete.\n{result:?}"),
+            ),
+        }
+        return;
+    }
+    let Some(reader) = (*ptr).cpu_reader.as_mut() else {
+        KillTimer(hwnd, 3);
+        return;
+    };
+    let outcome = reader.poll();
+    if matches!(outcome, Poll::Running) {
+        return;
+    }
+    KillTimer(hwnd, 3);
+    (*ptr).cpu_reader = None;
+    let manual = (*ptr).cpu_manual;
+    match outcome {
+        Poll::AdminRequired if !(*ptr).cpu_elevated => {
+            let permission = (*ptr).settings.cpu_permission;
+            let (allow, remember) = match permission {
+                Permission::Allow => (true, false),
+                Permission::Deny => (false, false),
+                Permission::Ask if manual => cpu_sensor::confirm(hwnd),
+                Permission::Ask => (false, false),
+            };
+            if allow {
+                if start_cpu_sensor(hwnd, ptr, true) && remember {
+                    (*ptr).settings.cpu_permission = Permission::Allow;
+                    (*ptr).save_settings();
+                }
+            } else if remember {
+                (*ptr).settings.cpu_permission = Permission::Deny;
+                (*ptr).save_settings();
+            }
+        }
+        Poll::MissingDriver if manual && !(*ptr).cpu_install_attempted && cpu_sensor::installer_available() => {
+            let text = wide(cpu_sensor::label(
+                "CPU温度の取得にはPawnIOドライバーが必要です。同梱の署名済み公式インストーラーを起動しますか？ 続けると、Windowsが管理者権限の許可を求めます。",
+                "Reading CPU temperature requires the PawnIO driver. Open the bundled signed official installer? Windows will ask for administrator permission.",
+            ));
+            (*ptr).cpu_install_attempted = true;
+            if MessageBoxW(hwnd, text.as_ptr(), wide("PawnIO").as_ptr(), MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION) == IDYES {
+                match cpu_sensor::install_driver(hwnd) {
+                    Ok(process) => {
+                        (*ptr).cpu_installer = Some(process);
+                        SetTimer(hwnd, 3, 1000, None);
+                    }
+                    Err(error) if error.raw_os_error() == Some(ERROR_CANCELLED as i32) => {}
+                    Err(error) => cpu_message(
+                        hwnd,
+                        &format!("PawnIOのセットアップを開けません。\n{error}"),
+                        &format!("Could not open PawnIO setup.\n{error}"),
+                    ),
+                }
+            }
+        }
+        Poll::MissingDriver if manual => cpu_message(
+            hwnd,
+            "CPU温度の取得には PawnIO ドライバーが必要です。対応バージョン（2.0 以降）を導入してから、再度お試しください。\nhttps://pawnio.eu/",
+            "CPU temperature requires the PawnIO driver (2.0 or later). Install it and try again.\nhttps://pawnio.eu/",
+        ),
+        Poll::AdminRequired | Poll::Unsupported | Poll::Failed if manual => cpu_message(
+            hwnd,
+            "この環境ではCPU温度を取得できませんでした。",
+            "CPU temperature could not be read on this system.",
+        ),
+        _ => {}
+    }
+}
+
 // Native window calls can synchronously re-enter wndproc. Keep only raw
 // state pointers across these boundaries, never a live exclusive App borrow.
 unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
     match id {
+        id if (taskbar_graph::MENU_BASE..=taskbar_graph::MENU_BASE + METRICS.len())
+            .contains(&id) =>
+        {
+            (*ptr).settings.taskbar_metric = id.checked_sub(taskbar_graph::MENU_BASE + 1);
+            update_taskbar_icon(hwnd, ptr);
+            if IsWindowVisible(hwnd) == 0 {
+                if (*ptr).settings.taskbar_metric.is_some() {
+                    SetTimer(hwnd, 1, 1000, None);
+                } else {
+                    KillTimer(hwnd, 1);
+                }
+            }
+        }
         400..=412 => {
             (*ptr).frame_plot = None;
             (*ptr).settings.language = id
@@ -556,7 +771,7 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
         }
         302 => hide(hwnd, ptr),
         303 => {
-            if let Err(e) = settings::set_startup(!settings::startup_enabled()) {
+            if let Err(e) = settings::set_startup(!settings::startup_enabled(), hwnd) {
                 MessageBoxW(
                     hwnd,
                     wide(&e).as_ptr(),
@@ -566,11 +781,40 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             }
         }
         304 => {
+            if IsWindowVisible(hwnd) != 0 {
+                (*ptr).update_position(hwnd);
+            }
             DestroyWindow(hwnd);
             return;
         }
         305 => show(hwnd, ptr),
         306 => menu(hwnd, ptr),
+        308 if (*ptr).cpu_helper && (*ptr).cpu_installer.is_none() => {
+            if (*ptr).cpu_reader.is_some() {
+                KillTimer(hwnd, 3);
+                (*ptr).cpu_reader = None;
+                if (*ptr).settings.cpu_permission == Permission::Allow {
+                    (*ptr).settings.cpu_permission = Permission::Ask;
+                }
+            } else {
+                (*ptr).cpu_manual = true;
+                (*ptr).cpu_install_attempted = false;
+                start_cpu_sensor(hwnd, ptr, false);
+            }
+        }
+        309 => (*ptr).settings.cpu_permission = Permission::Ask,
+        310 => {
+            (*ptr).settings.tray_enabled = !(*ptr).settings.tray_enabled;
+            if (*ptr).settings.tray_enabled {
+                (*ptr).tray_add(hwnd);
+            } else {
+                if IsWindowVisible(hwnd) == 0 {
+                    show(hwnd, ptr);
+                }
+                Shell_NotifyIconW(NIM_DELETE, &(*ptr).tray);
+                (*ptr).tray = zeroed();
+            }
+        }
         307 => {
             (*ptr).hover = None;
             (*ptr).drag_start = None;
@@ -626,8 +870,8 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
                 (*ptr).px((*ptr).settings.normal_width as f64) - border_width,
                 (*ptr).px((*ptr).settings.normal_height as f64) - border_height,
             );
-            let network = ((*ptr).available[3] && (*ptr).settings.visible[3])
-                || ((*ptr).available[4] && (*ptr).settings.visible[4]);
+            let network = ((*ptr).chart_available[3] && (*ptr).settings.visible[3])
+                || ((*ptr).chart_available[4] && (*ptr).settings.visible[4]);
             let latest = (*ptr).data.lock().unwrap().latest();
             let dc = GetDC(hwnd);
             let geometry = crate::layout::same_plot_geometry(
@@ -686,7 +930,63 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
         tr("Windowsログオン時に起動"),
         settings::startup_enabled(),
     );
-    add(302, tr("トレイに格納"), false);
+    add(310, tr("タスクトレイに常駐"), (*ptr).settings.tray_enabled);
+    if (*ptr).settings.tray_enabled {
+        add(302, tr("トレイに格納"), false);
+    }
+    if (*ptr).cpu_helper {
+        add(
+            308,
+            cpu_sensor::label("CPU温度の計測", "CPU temperature monitoring"),
+            (*ptr).cpu_reader.is_some(),
+        );
+        if (*ptr).settings.cpu_permission != Permission::Ask {
+            add(
+                309,
+                cpu_sensor::label(
+                    "管理者権限の選択をリセット",
+                    "Reset administrator access choice",
+                ),
+                false,
+            );
+        }
+    }
+    let taskbar = CreatePopupMenu();
+    if !taskbar.is_null() {
+        let selected = (*ptr).settings.taskbar_metric;
+        let latest = (*ptr).data.lock().unwrap().latest();
+        let append = |id: usize, label: &str, checked: bool| {
+            AppendMenuW(
+                taskbar,
+                MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED },
+                id,
+                wide(label).as_ptr(),
+            );
+        };
+        append(
+            taskbar_graph::MENU_BASE,
+            tr("標準アイコン"),
+            selected.is_none(),
+        );
+        for (index, metric) in METRICS.iter().enumerate() {
+            if metric.available(&latest) {
+                append(
+                    taskbar_graph::MENU_BASE + 1 + index,
+                    &metric.label(),
+                    selected == Some(index),
+                );
+            }
+        }
+        if AppendMenuW(
+            menu,
+            MF_POPUP,
+            taskbar as usize,
+            wide(tr("タスクバーのグラフ")).as_ptr(),
+        ) == 0
+        {
+            DestroyMenu(taskbar);
+        }
+    }
     let languages = CreatePopupMenu();
     if !languages.is_null() {
         let append = |id: usize, name: &str, checked: bool| {
@@ -730,7 +1030,7 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     for (i, name) in names().iter().enumerate() {
-        if (*ptr).available[i] {
+        if (*ptr).available[i] || (*ptr).chart_available[i] {
             add(
                 201 + i,
                 &i18n::message("線を表示: {}", name),
@@ -774,7 +1074,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
         return DefWindowProcW(hwnd, msg, w, l);
     }
     if msg == (*ptr).taskbar_created {
-        (*ptr).tray_add(hwnd);
+        if (*ptr).settings.tray_enabled && !(*ptr).tray_add(hwnd) && IsWindowVisible(hwnd) == 0 {
+            ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+        }
+        return 0;
+    }
+    if msg == (*ptr).taskbar_button_created {
+        update_taskbar_button(hwnd, ptr);
         return 0;
     }
     match msg {
@@ -845,6 +1151,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 if w as u32 == SIZE_RESTORED && !(*ptr).frame_changing {
                     (*ptr).update_position(hwnd);
                 }
+                if IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0 {
+                    SetTimer(hwnd, 1, 1000, None);
+                }
                 InvalidateRect(hwnd, null(), 0);
             }
             0
@@ -879,6 +1188,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
         }
         WM_SETTINGCHANGE | WM_THEMECHANGED => {
             (*ptr).theme(hwnd);
+            update_taskbar_icon(hwnd, ptr);
             0
         }
         WM_EXITSIZEMOVE => {
@@ -1004,6 +1314,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             menu(hwnd, ptr);
             0
         }
+        WM_SYSKEYDOWN if w == VK_F10 as usize && (l & ((1 << 29) | (1 << 30))) == 0 => {
+            menu(hwnd, ptr);
+            0
+        }
         WM_KEYDOWN => {
             match w {
                 0x31..=0x35 => command(hwnd, ptr, 101 + w - 0x31),
@@ -1016,7 +1330,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                     }
                 }
                 0x7a => command(hwnd, ptr, 307),
-                0x5d | 0x79 => menu(hwnd, ptr),
+                0x5d => menu(hwnd, ptr),
                 _ => {}
             }
             0
@@ -1026,10 +1340,29 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_CLOSE => {
+            command(
+                hwnd,
+                ptr,
+                if (*ptr).settings.tray_enabled {
+                    302
+                } else {
+                    304
+                },
+            );
+            0
+        }
+        WM_SYSCOMMAND if (w & 0xfff0) as u32 == SC_MINIMIZE && (*ptr).settings.tray_enabled => {
             hide(hwnd, ptr);
             0
         }
-        WM_TIMER => {
+        WM_ENDSESSION if w != 0 => {
+            if IsWindowVisible(hwnd) != 0 {
+                (*ptr).update_position(hwnd);
+            }
+            (*ptr).save_settings();
+            0
+        }
+        crate::packaged_startup::STARTUP_RESULT => {
             if let Some(error) = crate::packaged_startup::take_error() {
                 MessageBoxW(
                     hwnd,
@@ -1038,7 +1371,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                     MB_ICONERROR,
                 );
             }
+            0
+        }
+        WM_TIMER => {
+            if w == 3 {
+                poll_cpu_sensor(hwnd, ptr);
+                return 0;
+            }
             if w == 1 {
+                update_taskbar_icon(hwnd, ptr);
+            }
+            if w == 1 && IsWindowVisible(hwnd) != 0 && IsIconic(hwnd) == 0 {
                 if (*ptr).benchmark_render {
                     (*ptr).render_now(hwnd);
                 } else {
@@ -1074,7 +1417,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             }
             0
         }
-        TRAY_MESSAGE => {
+        TRAY_MESSAGE if (*ptr).settings.tray_enabled => {
             match l as u32 {
                 WM_LBUTTONUP | WM_LBUTTONDBLCLK => {
                     if IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
@@ -1089,11 +1432,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_DESTROY => {
-            (*ptr).update_position(hwnd);
+            if IsWindowVisible(hwnd) != 0 {
+                (*ptr).update_position(hwnd);
+            }
             (*ptr).save_settings();
-            Shell_NotifyIconW(NIM_DELETE, &(*ptr).tray);
+            if (*ptr).settings.tray_enabled {
+                Shell_NotifyIconW(NIM_DELETE, &(*ptr).tray);
+            }
             KillTimer(hwnd, 1);
             KillTimer(hwnd, 2);
+            KillTimer(hwnd, 3);
+            (*ptr).cpu_reader = None;
             if let Some(path) = &(*ptr).diagnostic {
                 let elapsed = (*ptr).started.elapsed().as_secs_f64();
                 let cpu = crate::process_cpu() - (*ptr).cpu_start;
@@ -1224,6 +1573,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             strokes: Default::default(),
             hits: Vec::new(),
             available: [false; 6],
+            chart_available: [false; 6],
             availability_until: [0.; 6],
             chart_end: 0.,
             network_top: 0.1,
@@ -1233,7 +1583,18 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             hover: None,
             tray: zeroed(),
             icon,
+            graph_icon: null_mut(),
+            icon_frame: None,
+            cpu_reader: None,
+            cpu_installer: None,
+            cpu_install_attempted: false,
+            cpu_elevated: false,
+            cpu_manual: false,
+            cpu_helper: !args.iter().any(|s| s == "--demo" || s == "--test-ui")
+                && cpu_sensor::available(),
             taskbar_created: RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()),
+            taskbar_button_created: RegisterWindowMessageW(wide("TaskbarButtonCreated").as_ptr()),
+            taskbar: taskbar_graph::Taskbar::new(),
             snapshot: arg("--snapshot"),
             test_ui: args.iter().any(|s| s == "--test-ui"),
             started: Instant::now(),
@@ -1281,10 +1642,13 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             let mut info: MONITORINFO = zeroed();
             info.cbSize = size_of::<MONITORINFO>() as u32;
             if GetMonitorInfoW(monitor, &mut info) != 0 {
+                let work = info.rcWork;
+                let grip_x = 48.min(work.right - work.left);
+                let grip_y = 24.min(work.bottom - work.top);
                 initial.left = initial
                     .left
-                    .clamp(info.rcWork.left, info.rcWork.right - 140);
-                initial.top = initial.top.clamp(info.rcWork.top, info.rcWork.bottom - 40);
+                    .clamp(work.left + grip_x - initial_size.0, work.right - grip_x);
+                initial.top = initial.top.clamp(work.top, work.bottom - grip_y);
             }
         }
         let hwnd = CreateWindowExW(
@@ -1332,10 +1696,15 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         }
         if !args.iter().any(|s| s == "--tray") || !tray_ok {
             ShowWindow(hwnd, SW_SHOW);
+        }
+        if IsWindowVisible(hwnd) != 0 || app.settings.taskbar_metric.is_some() {
             SetTimer(hwnd, 1, 1000, None);
         }
         if app.auto_exit.is_some() || app.test_ui || app.snapshot.is_some() {
             SetTimer(hwnd, 2, 1000, None);
+        }
+        if app.cpu_helper && app.settings.cpu_permission == Permission::Allow {
+            start_cpu_sensor(hwnd, &mut *app, false);
         }
         let mut msg: MSG = zeroed();
         while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
@@ -1347,6 +1716,9 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             DispatchMessageW(&msg);
         }
         CloseHandle(mutex);
+        if !app.graph_icon.is_null() {
+            DestroyIcon(app.graph_icon);
+        }
         if !owned_icon.is_null() {
             DestroyIcon(owned_icon);
         }

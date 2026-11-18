@@ -95,6 +95,7 @@ impl Counter {
             return false;
         }
         let mut bytes = (self.buffer.len() * 8) as u32;
+        let had_buffer = bytes != 0;
         let mut count = 0;
         let flags = PDH_FMT_DOUBLE | PDH_FMT_NOCAP100;
         let mut status = PdhGetFormattedCounterArrayW(
@@ -108,7 +109,18 @@ impl Counter {
                 self.buffer.as_mut_ptr() as _
             },
         );
-        if status == PDH_MORE_DATA {
+        if had_buffer && matches!(status, PDH_MORE_DATA | PDH_INVALID_ARGUMENT) {
+            // An undersized nonempty buffer does not return a reliable size.
+            bytes = 0;
+            status = PdhGetFormattedCounterArrayW(
+                self.handle,
+                flags,
+                &mut bytes,
+                &mut count,
+                null_mut(),
+            );
+        }
+        if status == PDH_MORE_DATA && bytes > 0 {
             self.buffer.resize((bytes as usize).div_ceil(8), 0);
             status = PdhGetFormattedCounterArrayW(
                 self.handle,
@@ -120,6 +132,9 @@ impl Counter {
         }
         if status != 0 {
             return false;
+        }
+        if count == 0 {
+            return true;
         }
         for item in std::slice::from_raw_parts(
             self.buffer.as_ptr() as *const PDH_FMT_COUNTERVALUE_ITEM_W,

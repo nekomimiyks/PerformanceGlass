@@ -1,8 +1,9 @@
-//! Read-only sensors. No driver installation, subprocess polling, ACPI temperature
+//! Read-only sensors. No driver installation, ACPI temperature
 //! guesses, or synthetic CPU temperature. Unsupported sensors stay NaN.
 use std::{
     mem::{size_of, zeroed},
     ptr::null_mut,
+    sync::{mpsc, Arc, Mutex},
     time::{Duration, Instant},
 };
 use windows::{
@@ -15,22 +16,79 @@ use windows_sys::Win32::{Foundation::*, System::Diagnostics::ToolHelp::*};
 pub struct Sensors {
     adapters: Vec<D3DKMT_ADAPTERINFO>,
     last_enumeration: Instant,
-    provider: Option<IWbemServices>,
-    com_initialized: bool,
     provider_check: Option<Instant>,
-    cpu_check: Option<Instant>,
-    cpu_value: f32,
+    cpu: Option<CpuReader>,
 }
+
+struct CpuReader {
+    latest: Arc<Mutex<Option<(Instant, f32)>>>,
+    // Dropping the sender wakes an idle worker. The collector never joins WMI.
+    _stop: mpsc::Sender<()>,
+}
+
+impl CpuReader {
+    fn start(namespace: &'static str) -> std::io::Result<Self> {
+        let (stop, stop_rx) = mpsc::channel();
+        let latest = Arc::new(Mutex::new(None));
+        let output = Arc::clone(&latest);
+        std::thread::Builder::new()
+            .name("cpu-temperature".into())
+            .spawn(move || {
+                let mut wmi = CpuWmi {
+                    provider: None,
+                    com_initialized: false,
+                };
+                let mut namespace = Some(namespace);
+                let mut probe_after = Instant::now();
+                loop {
+                    if !matches!(stop_rx.try_recv(), Err(mpsc::TryRecvError::Empty)) {
+                        break;
+                    }
+                    if wmi.provider.is_none() && Instant::now() >= probe_after {
+                        if let Some(name) = namespace.take().or_else(running_exporter) {
+                            unsafe {
+                                wmi.connect(name);
+                            }
+                        }
+                        probe_after = Instant::now() + Duration::from_secs(60);
+                    }
+                    let value = unsafe { wmi.cpu_temperature() };
+                    *output.lock().unwrap() = Some((Instant::now(), value));
+                    let wait = if wmi.provider.is_some() {
+                        Duration::from_secs(1)
+                    } else {
+                        probe_after.saturating_duration_since(Instant::now())
+                    };
+                    if !matches!(
+                        stop_rx.recv_timeout(wait),
+                        Err(mpsc::RecvTimeoutError::Timeout)
+                    ) {
+                        break;
+                    }
+                }
+            })?;
+        Ok(Self {
+            latest,
+            _stop: stop,
+        })
+    }
+
+    fn temperature(&self) -> f32 {
+        self.latest
+            .lock()
+            .unwrap()
+            .filter(|(at, _)| at.elapsed() <= Duration::from_secs(3))
+            .map_or(f32::NAN, |(_, value)| value)
+    }
+}
+
 impl Sensors {
     pub fn new() -> Self {
         let mut s = Self {
             adapters: Vec::new(),
             last_enumeration: Instant::now(),
-            provider: None,
-            com_initialized: false,
             provider_check: None,
-            cpu_check: None,
-            cpu_value: f32::NAN,
+            cpu: None,
         };
         s.enumerate();
         s
@@ -85,31 +143,33 @@ impl Sensors {
         }
         // Only probe WMI if a real sensor exporter is already running. This
         // avoids starting the WMI provider/service on the normal lightweight path.
-        if self.provider.is_none()
+        let integrated = crate::cpu_sensor::temperature();
+        if integrated.is_finite() {
+            return [integrated, gpu];
+        }
+        if self.cpu.is_none()
             && self
                 .provider_check
                 .is_none_or(|t| t.elapsed() >= Duration::from_secs(60))
         {
             self.provider_check = Some(Instant::now());
             if let Some(namespace) = running_exporter() {
-                unsafe {
-                    self.connect(namespace);
-                }
+                self.cpu = CpuReader::start(namespace).ok();
             }
         }
-        if self.provider.is_some()
-            && self
-                .cpu_check
-                .is_none_or(|t| t.elapsed() >= Duration::from_secs(1))
-        {
-            self.cpu_check = Some(Instant::now());
-            self.cpu_value = unsafe { self.cpu_temperature() };
-        }
-        if self.provider.is_none() {
-            self.cpu_value = f32::NAN;
-        }
-        [self.cpu_value, gpu]
+        [
+            self.cpu.as_ref().map_or(f32::NAN, CpuReader::temperature),
+            gpu,
+        ]
     }
+}
+
+struct CpuWmi {
+    provider: Option<IWbemServices>,
+    com_initialized: bool,
+}
+
+impl CpuWmi {
     unsafe fn connect(&mut self, namespace: &str) {
         if !self.com_initialized {
             if CoInitializeEx(None, COINIT_MULTITHREADED).is_err() {
@@ -182,7 +242,15 @@ impl Sensors {
             }
             let mut item = [None];
             let mut count = 0;
-            if rows.Next(10, &mut item, &mut count).is_err() || count == 0 {
+            let status = rows.Next(10, &mut item, &mut count);
+            if status.is_err() {
+                self.provider = None;
+                return f32::NAN;
+            }
+            if count == 0 && status.0 == WBEM_S_TIMEDOUT.0 {
+                continue;
+            }
+            if count == 0 {
                 break;
             }
             let Some(item) = item[0].take() else {
@@ -217,13 +285,20 @@ impl Sensors {
         }
     }
 }
-impl Drop for Sensors {
+impl Drop for CpuWmi {
     fn drop(&mut self) {
         unsafe {
             self.provider = None;
             if self.com_initialized {
                 CoUninitialize();
             }
+        }
+    }
+}
+
+impl Drop for Sensors {
+    fn drop(&mut self) {
+        unsafe {
             for a in self.adapters.drain(..) {
                 D3DKMTCloseAdapter(&D3DKMT_CLOSEADAPTER {
                     hAdapter: a.hAdapter,

@@ -258,6 +258,50 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
                 .push(format!("history hover missing sensors or disk I/O: {text}"));
         }
     }
+    if (*ptr).demo {
+        // Simulate an adapter whose last recorded point is 30 seconds old.
+        let mut history = History::new();
+        let mut recorded = Sample {
+            time: 30.,
+            ..Sample::default()
+        };
+        recorded.values[4] = 10.;
+        recorded.traffic[1] = [8., 2.];
+        recorded.connected[1] = true;
+        history.push(recorded);
+        history.push(Sample {
+            time: 60.,
+            ..Sample::default()
+        });
+        let old_data = std::mem::replace(&mut (*ptr).data, Arc::new(Mutex::new(history)));
+        let old_range = (*ptr).settings.range;
+        let old_visible = (*ptr).settings.visible;
+        (*ptr).settings.range = 0;
+        (*ptr).settings.visible = [true; 6];
+        (*ptr).availability_until = [0.; 6];
+        (*ptr).render_now(hwnd);
+        let plot = (*ptr).plot;
+        let old_point = (plot.left + plot.right - 1) / 2;
+        if (*ptr).available[4]
+            || !(*ptr).chart_available[4]
+            || !(*ptr)
+                .graph
+                .buckets
+                .iter()
+                .any(|column| column[4].count > 0)
+            || !(*ptr)
+                .hover_text(old_point)
+                .is_some_and(|hint| hint.contains("Wi-Fi") && hint.contains("8.00"))
+        {
+            (*ptr)
+                .qa_errors
+                .push("removed adapter lost its recorded graph or tooltip".into());
+        }
+        (*ptr).data = old_data;
+        (*ptr).settings.range = old_range;
+        (*ptr).settings.visible = old_visible;
+        (*ptr).render_now(hwnd);
+    }
     let tooltip_x = (*ptr).plot.left + 5;
     let tooltip_y = (*ptr).plot.top + 5;
     SendMessageW(
@@ -312,6 +356,57 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
         (*ptr)
             .qa_errors
             .push(format!("GDI objects leaked: {before} -> {after}"));
+    }
+    if (*ptr).demo {
+        if (*ptr).settings.tray_enabled || !(*ptr).tray.hWnd.is_null() {
+            (*ptr)
+                .qa_errors
+                .push("system tray should be off by default".into());
+        }
+        SendMessageW(hwnd, WM_COMMAND, 310, 0);
+        if !(*ptr).settings.tray_enabled || (*ptr).tray.hWnd != hwnd {
+            (*ptr)
+                .qa_errors
+                .push("system tray could not be enabled".into());
+        }
+        let metric = (*ptr).settings.taskbar_metric;
+        SendMessageW(hwnd, WM_COMMAND, taskbar_graph::MENU_BASE + 1, 0);
+        let cpu_icon = (*ptr).graph_icon;
+        update_taskbar_icon(hwnd, ptr);
+        if cpu_icon.is_null() || (*ptr).graph_icon != cpu_icon || (*ptr).tray.hIcon != cpu_icon {
+            (*ptr)
+                .qa_errors
+                .push("CPU mini graph failed to create or reuse its icon".into());
+        }
+        let gpu_memory = METRICS
+            .iter()
+            .position(|metric| metric.key == "gpu_memory")
+            .unwrap();
+        SendMessageW(
+            hwnd,
+            WM_COMMAND,
+            taskbar_graph::MENU_BASE + 1 + gpu_memory,
+            0,
+        );
+        if (*ptr).graph_icon.is_null() || (*ptr).graph_icon == cpu_icon {
+            (*ptr)
+                .qa_errors
+                .push("mini graph did not update for GPU memory".into());
+        }
+        SendMessageW(hwnd, WM_COMMAND, taskbar_graph::MENU_BASE, 0);
+        if !(*ptr).graph_icon.is_null() || (*ptr).tray.hIcon != (*ptr).icon {
+            (*ptr)
+                .qa_errors
+                .push("mini graph did not restore the standard icon".into());
+        }
+        (*ptr).settings.taskbar_metric = metric;
+        update_taskbar_icon(hwnd, ptr);
+        SendMessageW(hwnd, WM_COMMAND, 310, 0);
+        if (*ptr).settings.tray_enabled {
+            (*ptr)
+                .qa_errors
+                .push("system tray could not be disabled".into());
+        }
     }
     let report=format!("UI検証: {}\n96/120/144/192/288/384 DPI、280x60物理px、枠切替時のグラフ寸法と画面座標保持、表示状態の保持、5期間、2テーマ、温度・読み書きの履歴、GDI 30回描画\nGDI objects: {before} -> {after}\nUser objects (20 theme notifications): {user_before} -> {user_after}\n{}",if (*ptr).qa_errors.is_empty(){"成功"}else{"失敗"},(*ptr).qa_errors.join("\n"));
     if let Some(dir) = &(*ptr).qa_dir {

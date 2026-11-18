@@ -151,6 +151,9 @@ pub fn tr(key: &str) -> &str {
 pub fn translate(language: Language, key: &str) -> &str {
     let row = match key {
         "言語" => &["言語", "Language", "语言", "語言", "언어", "Sprache", "Langue", "Idioma", "Idioma", "Lingua", "Язык", "Bahasa"] as &[&str; 12],
+        "タスクバーのグラフ" => &["タスクバーのグラフ", "Taskbar graph", "任务栏图表", "工作列圖表", "작업 표시줄 그래프", "Taskleistendiagramm", "Graphique de la barre des tâches", "Gráfico de la barra de tareas", "Gráfico da barra de tarefas", "Grafico della barra delle applicazioni", "График на панели задач", "Grafik bilah tugas"],
+        "標準アイコン" => &["標準アイコン", "Standard icon", "默认图标", "預設圖示", "기본 아이콘", "Standardsymbol", "Icône standard", "Icono estándar", "Ícone padrão", "Icona standard", "Стандартный значок", "Ikon standar"],
+        "タスクトレイに常駐" => &["タスクトレイに常駐", "Keep in system tray", "保留在系统托盘", "保留在系統匣", "시스템 트레이에 유지", "Im Infobereich ausführen", "Rester dans la zone de notification", "Mantener en la bandeja del sistema", "Manter na bandeja do sistema", "Mantieni nell’area di notifica", "Оставлять в области уведомлений", "Tetap di baki sistem"],
         "Windowsに合わせる（自動）" => &["Windowsに合わせる（自動）", "Follow Windows (automatic)", "跟随 Windows（自动）", "跟隨 Windows（自動）", "Windows 설정에 따름 (자동)", "Windows folgen (automatisch)", "Suivre Windows (automatique)", "Seguir Windows (automático)", "Seguir Windows (automático)", "Segui Windows (automatico)", "Как в Windows (автоматически)", "Ikuti Windows (otomatis)"] as &[&str; 12],
         "トレイに格納" => &["トレイに格納","Minimize to tray","最小化到托盘","縮小至通知區域","알림 영역으로 최소화","In Infobereich minimieren","Réduire dans la zone de notification","Minimizar a la bandeja","Minimizar para a bandeja","Riduci nell'area di notifica","Свернуть в область уведомлений","Minimalkan ke baki"] as &[&str; 12],
         "{}前" => &["{}前","{} ago","{}前","{}前","{} 전","vor {}","il y a {}","hace {}","há {}","{} fa","{} назад","{} lalu"] as &[&str; 12],

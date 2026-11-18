@@ -53,14 +53,21 @@ impl Default for Sample {
 
 pub struct History {
     pub samples: VecDeque<Sample>,
+    last_plot_time: [f64; 6],
 }
 impl History {
     pub fn new() -> Self {
         Self {
             samples: VecDeque::with_capacity(CAPACITY),
+            last_plot_time: [f64::NEG_INFINITY; 6],
         }
     }
     pub fn push(&mut self, sample: Sample) {
+        for (last, value) in self.last_plot_time.iter_mut().zip(sample.values) {
+            if value.is_finite() {
+                *last = sample.time;
+            }
+        }
         if self.samples.len() == CAPACITY {
             self.samples.pop_front();
         }
@@ -68,6 +75,14 @@ impl History {
     }
     pub fn latest(&self) -> Sample {
         self.samples.back().copied().unwrap_or_default()
+    }
+    /// Plot availability for a chart ending at or after the latest sample.
+    pub fn plotted_since(&self, start: f64) -> [bool; 6] {
+        let Some(oldest) = self.samples.front() else {
+            return [false; 6];
+        };
+        self.last_plot_time
+            .map(|time| time >= start.max(oldest.time))
     }
     pub fn nearest(&self, time: f64) -> Option<Sample> {
         // Binary search over logical VecDeque indices, including after wraparound.
@@ -227,6 +242,29 @@ pub fn nice_ceiling(v: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_current_sample_preserves_history_until_expiry() {
+        let mut history = History::new();
+        let mut sample = Sample {
+            time: 10.,
+            ..Sample::default()
+        };
+        sample.values[4] = 2.;
+        history.push(sample);
+        history.push(Sample {
+            time: 22.,
+            ..Sample::default()
+        });
+        assert!(history.plotted_since(10.)[4]);
+        assert!(!history.plotted_since(10.1)[4]);
+        for i in 0..CAPACITY {
+            history.push(Sample {
+                time: 23. + i as f64,
+                ..Sample::default()
+            });
+        }
+        assert!(!history.plotted_since(10.)[4]);
+    }
     #[test]
     fn bounded_and_nearest_after_wrap() {
         let mut h = History::new();

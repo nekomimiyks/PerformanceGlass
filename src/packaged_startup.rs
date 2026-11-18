@@ -12,6 +12,13 @@ use windows::{
     ApplicationModel::{StartupTask, StartupTaskState},
     Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED},
 };
+use windows_sys::Win32::{
+    Foundation::HWND,
+    UI::WindowsAndMessaging::{PostMessageW, WM_APP},
+};
+
+pub const STARTUP_RESULT: u32 = WM_APP + 3;
+type StartupChange = (bool, usize);
 
 #[link(name = "kernel32")]
 extern "system" {
@@ -21,7 +28,7 @@ extern "system" {
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static QUERY_STATUS: AtomicI32 = AtomicI32::new(0);
 static ERROR: Mutex<Option<String>> = Mutex::new(None);
-static WORKER: OnceLock<Result<SyncSender<Option<bool>>, String>> = OnceLock::new();
+static WORKER: OnceLock<Result<SyncSender<Option<StartupChange>>, String>> = OnceLock::new();
 
 pub fn is_packaged() -> bool {
     static VALUE: OnceLock<bool> = OnceLock::new();
@@ -38,14 +45,14 @@ pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
 }
 
-fn worker() -> Result<&'static SyncSender<Option<bool>>, String> {
+fn worker() -> Result<&'static SyncSender<Option<StartupChange>>, String> {
     WORKER.get_or_init(|| {
-        let (sender, receiver) = sync_channel(2);
+        let (sender, receiver) = sync_channel::<Option<StartupChange>>(2);
         std::thread::Builder::new().name("store-startup".into()).stack_size(128 * 1024)
             .spawn(move || {
                 let initialized = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
                 while let Ok(change) = receiver.recv() {
-                    let result = initialized.clone().and_then(|_| update(change));
+                    let result = initialized.clone().and_then(|_| update(change.map(|(enabled, _)| enabled)));
                     QUERY_STATUS.store(if result.is_ok() { 1 } else { -1 }, Ordering::Relaxed);
                     match result {
                         Ok(enabled) => ENABLED.store(enabled, Ordering::Relaxed),
@@ -53,6 +60,9 @@ fn worker() -> Result<&'static SyncSender<Option<bool>>, String> {
                             *ERROR.lock().unwrap() = Some(format!("{}\n{error}", crate::i18n::tr("自動起動を変更できません。Windowsの「設定 → アプリ → スタートアップ」も確認してください。")));
                         }
                         Err(_) => {}
+                    }
+                    if let Some((_, owner)) = change {
+                        unsafe { PostMessageW(owner as HWND, STARTUP_RESULT, 0, 0); }
                     }
                 }
                 if initialized.is_ok() { unsafe { RoUninitialize(); } }
@@ -91,10 +101,12 @@ pub fn refresh() {
     }
 }
 
-pub fn set(enabled: bool) -> Result<(), String> {
-    worker()?.try_send(Some(enabled)).map_err(|_| {
-        crate::i18n::tr("自動起動の設定処理中です。少し待ってから再度お試しください。").into()
-    })
+pub fn set(enabled: bool, owner: HWND) -> Result<(), String> {
+    worker()?
+        .try_send(Some((enabled, owner as usize)))
+        .map_err(|_| {
+            crate::i18n::tr("自動起動の設定処理中です。少し待ってから再度お試しください。").into()
+        })
 }
 
 pub fn take_error() -> Option<String> {
