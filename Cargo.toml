@@ -1,6 +1,6 @@
 [package]
 name = "performance-glass"
-version = "0.1.14"
+version = "0.1.15"
 edition = "2021"
 description = "軽量なWindows常駐パフォーマンスモニター"
 license = "MIT"

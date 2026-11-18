@@ -1,6 +1,32 @@
 //! Exercises the real Win32 message handlers and GDI resource lifetime. Runs only
 //! with --test-ui; never persists settings or changes system display settings.
 use super::*;
+
+#[derive(Default)]
+struct TooltipVisibility {
+    show: u32,
+    hide: u32,
+}
+
+unsafe extern "system" fn record_tooltip(
+    hwnd: HWND,
+    msg: u32,
+    w: WPARAM,
+    l: LPARAM,
+    _: usize,
+    data: usize,
+) -> LRESULT {
+    if msg == WM_SHOWWINDOW {
+        let events = data as *mut TooltipVisibility;
+        if w != 0 {
+            (*events).show += 1;
+        } else {
+            (*events).hide += 1;
+        }
+    }
+    DefSubclassProc(hwnd, msg, w, l)
+}
+
 unsafe fn double_click_graph(hwnd: HWND, ptr: *mut App) {
     (*ptr).render_now(hwnd);
     let p = (*ptr).plot;
@@ -83,7 +109,7 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
     for dpi in [96, 120, 144, 192, 288, 384] {
         (*ptr).scale = dpi as f64 / 96.;
         let fonts = Fonts::new((*ptr).scale);
-        SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
+
         (*ptr).fonts = fonts;
         for (name, width, height) in [
             ("normal", 960, 480),
@@ -214,7 +240,7 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
     }
     (*ptr).scale = saved_scale;
     let fonts = Fonts::new(saved_scale);
-    SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
+
     (*ptr).fonts = fonts;
     SetWindowPos(
         hwnd,
@@ -302,19 +328,79 @@ pub(super) unsafe fn run(hwnd: HWND, ptr: *mut App) {
         (*ptr).settings.visible = old_visible;
         (*ptr).render_now(hwnd);
     }
-    let tooltip_x = (*ptr).plot.left + 5;
-    let tooltip_y = (*ptr).plot.top + 5;
-    SendMessageW(
-        hwnd,
-        WM_MOUSEMOVE,
-        0,
-        (tooltip_x as u16 as u32 | ((tooltip_y as u16 as u32) << 16)) as isize,
-    );
-    SendMessageW(hwnd, WM_MOUSELEAVE, 0, 0);
-    if (*ptr).tooltip_on || (*ptr).hover.is_some() {
-        (*ptr)
-            .qa_errors
-            .push("tooltip did not hide after native hover messages".into());
+    if (*ptr).demo {
+        let mut visibility = TooltipVisibility::default();
+        let tooltip = (*ptr).tooltip.hwnd;
+        let installed = SetWindowSubclass(
+            tooltip,
+            Some(record_tooltip),
+            1,
+            &mut visibility as *mut _ as usize,
+        );
+        if installed != 0 {
+            let plot = (*ptr).plot;
+            let middle = (plot.left + plot.right) / 2;
+            let mut cursor = POINT {
+                x: middle,
+                y: (plot.top + plot.bottom) / 2,
+            };
+            ClientToScreen(hwnd, &mut cursor);
+            let style = tooltip::TooltipStyle {
+                font: (*ptr).fonts.small,
+                background: (*ptr).palette.surface,
+                foreground: (*ptr).palette.text,
+                border: (*ptr).palette.grid,
+                scale: (*ptr).scale,
+            };
+            let mut first: RECT = zeroed();
+            let mut moved: RECT = zeroed();
+            for offset in [0, 20, 40, -25, 10] {
+                let text = (*ptr).hover_text(middle + offset).unwrap();
+                (*ptr).tooltip.update(
+                    text,
+                    POINT {
+                        x: cursor.x + offset,
+                        y: cursor.y,
+                    },
+                    style,
+                );
+                if offset == 0 {
+                    GetWindowRect(tooltip, &mut first);
+                }
+                if offset == 40 {
+                    GetWindowRect(tooltip, &mut moved);
+                }
+            }
+            if first.left == moved.left
+                || IsWindowVisible(tooltip) == 0
+                || (visibility.show, visibility.hide) != (1, 0)
+            {
+                (*ptr).qa_errors.push(format!(
+                    "tooltip movement should stay visible: show {}, hide {}",
+                    visibility.show, visibility.hide
+                ));
+            }
+            let hit = WindowFromPoint(POINT {
+                x: moved.left + 2,
+                y: moved.top + 2,
+            });
+            if hit == tooltip {
+                (*ptr)
+                    .qa_errors
+                    .push("tooltip intercepted the pointer".into());
+            }
+            SendMessageW(hwnd, WM_MOUSELEAVE, 0, 0);
+            if IsWindowVisible(tooltip) != 0 || (*ptr).hover.is_some() {
+                (*ptr)
+                    .qa_errors
+                    .push("tooltip did not hide after mouse leave".into());
+            }
+            RemoveWindowSubclass(tooltip, Some(record_tooltip), 1);
+        } else {
+            (*ptr)
+                .qa_errors
+                .push("could not observe tooltip visibility".into());
+        }
     }
     let before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
     let saved_language = crate::i18n::language();

@@ -21,6 +21,8 @@ use windows_sys::Win32::{
 
 #[path = "ui_render.rs"]
 mod rendering;
+#[path = "ui_tooltip.rs"]
+mod tooltip;
 #[path = "ui_qa.rs"]
 mod verification;
 
@@ -238,9 +240,7 @@ struct App {
     diagnostic: Option<String>,
     auto_exit: Option<u64>,
     demo: bool,
-    tooltip: HWND,
-    tooltip_text: Vec<u16>,
-    tooltip_on: bool,
+    tooltip: tooltip::Tooltip,
     theme_updating: bool,
     applied_dark: Option<bool>,
     drag_start: Option<DragStart>,
@@ -287,17 +287,6 @@ impl App {
             self.settings.normal_height = self.settings.height;
         }
     }
-    unsafe fn tool_info(&mut self, hwnd: HWND) -> TTTOOLINFOW {
-        TTTOOLINFOW {
-            cbSize: size_of::<TTTOOLINFOW>() as u32,
-            uFlags: TTF_TRACK | TTF_ABSOLUTE | TTF_TRANSPARENT,
-            hwnd,
-            uId: 1,
-            lpszText: self.tooltip_text.as_mut_ptr(),
-            ..zeroed()
-        }
-    }
-
     fn px(&self, v: f64) -> i32 {
         (v * self.scale).round() as i32
     }
@@ -320,20 +309,6 @@ impl App {
         if self.applied_dark != Some(dark) {
             self.applied_dark = Some(dark);
             DwmSetWindowAttribute(hwnd, 20, &enabled as *const _ as _, 4);
-        }
-        if !self.tooltip.is_null() {
-            SendMessageW(
-                self.tooltip,
-                TTM_SETTIPBKCOLOR,
-                self.palette.surface as usize,
-                0,
-            );
-            SendMessageW(
-                self.tooltip,
-                TTM_SETTIPTEXTCOLOR,
-                self.palette.text as usize,
-                0,
-            );
         }
         InvalidateRect(hwnd, null(), 0);
         self.theme_updating = false;
@@ -432,85 +407,22 @@ fn format_duration(s: u64) -> String {
     format!("−{value}")
 }
 
-unsafe fn create_tooltip(hwnd: HWND, ptr: *mut App) {
-    if !(*ptr).tooltip.is_null() {
-        return;
-    }
-    (*ptr).tooltip = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-        wide("tooltips_class32").as_ptr(),
-        null(),
-        WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP | TTS_NOANIMATE | TTS_NOFADE,
-        0,
-        0,
-        0,
-        0,
-        hwnd,
-        null_mut(),
-        GetModuleHandleW(null()),
-        null(),
-    );
-    if (*ptr).tooltip.is_null() {
-        return;
-    }
-    let info = (*ptr).tool_info(hwnd);
-    SendMessageW((*ptr).tooltip, TTM_ADDTOOLW, 0, &info as *const _ as isize);
-    SendMessageW(
-        (*ptr).tooltip,
-        TTM_SETMAXTIPWIDTH,
-        0,
-        (*ptr).px(560.) as isize,
-    );
-    SendMessageW((*ptr).tooltip, WM_SETFONT, (*ptr).fonts.small as usize, 0);
-    SetWindowTheme((*ptr).tooltip, wide("").as_ptr(), wide("").as_ptr());
-}
-
-unsafe fn tooltip_hide(hwnd: HWND, ptr: *mut App) {
-    if (*ptr).tooltip_on && !(*ptr).tooltip.is_null() {
-        // A synchronous control message can re-enter the owner window.
-        (*ptr).tooltip_on = false;
-        let info = (*ptr).tool_info(hwnd);
-        SendMessageW(
-            (*ptr).tooltip,
-            TTM_TRACKACTIVATE,
-            0,
-            &info as *const _ as isize,
-        );
-    }
-}
-
-unsafe fn tooltip_update(hwnd: HWND, ptr: *mut App, x: i32) {
-    if (*ptr).tooltip.is_null() {
-        return;
-    }
+unsafe fn tooltip_update(ptr: *mut App, x: i32) {
     let Some(text) = (*ptr).hover_text(x) else {
-        tooltip_hide(hwnd, ptr);
+        (*ptr).tooltip.hide();
         return;
     };
-    (*ptr).tooltip_text = wide(&text);
-    let info = (*ptr).tool_info(hwnd);
-    SendMessageW(
-        (*ptr).tooltip,
-        TTM_UPDATETIPTEXTW,
-        0,
-        &info as *const _ as isize,
-    );
-    let mut position: POINT = zeroed();
-    GetCursorPos(&mut position);
-    SendMessageW(
-        (*ptr).tooltip,
-        TTM_TRACKPOSITION,
-        0,
-        ((position.x + (*ptr).px(12.)) as u16 as u32
-            | ((position.y + (*ptr).px(16.)) as u16 as u32) << 16) as isize,
-    );
-    SendMessageW(
-        (*ptr).tooltip,
-        TTM_TRACKACTIVATE,
-        1,
-        &info as *const _ as isize,
-    );
-    (*ptr).tooltip_on = true;
+    let mut cursor: POINT = zeroed();
+    if GetCursorPos(&mut cursor) != 0 {
+        let style = tooltip::TooltipStyle {
+            font: (*ptr).fonts.small,
+            background: (*ptr).palette.surface,
+            foreground: (*ptr).palette.text,
+            border: (*ptr).palette.grid,
+            scale: (*ptr).scale,
+        };
+        (*ptr).tooltip.update(text, cursor, style);
+    }
 }
 
 unsafe fn hide(hwnd: HWND, ptr: *mut App) {
@@ -519,7 +431,7 @@ unsafe fn hide(hwnd: HWND, ptr: *mut App) {
         (*ptr).save_settings();
     }
     (*ptr).hover = None;
-    tooltip_hide(hwnd, ptr);
+    (*ptr).tooltip.hide();
     // Never leave an unreachable hidden process when the notification area rejects an icon.
     if (*ptr).settings.tray_enabled
         && (Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray) != 0 || (*ptr).tray_add(hwnd))
@@ -739,9 +651,9 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
                 .copied();
             i18n::select((*ptr).settings.language);
             (*ptr).hover = None;
-            tooltip_hide(hwnd, ptr);
+            (*ptr).tooltip.hide();
             let fonts = Fonts::new((*ptr).scale);
-            SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
+
             (*ptr).fonts = fonts;
             let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
             (*ptr).tray.szTip.fill(0);
@@ -821,7 +733,7 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             if GetCapture() == hwnd {
                 ReleaseCapture();
             }
-            tooltip_hide(hwnd, ptr);
+            (*ptr).tooltip.hide();
             (*ptr).render_now(hwnd);
             let old_plot = (*ptr).plot;
             let plot_width = (old_plot.right - old_plot.left).max(1);
@@ -907,7 +819,7 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
 
 unsafe fn menu(hwnd: HWND, ptr: *mut App) {
     (*ptr).hover = None;
-    tooltip_hide(hwnd, ptr);
+    (*ptr).tooltip.hide();
     let menu = CreatePopupMenu();
     let add = |id: usize, label: &str, checked: bool| {
         AppendMenuW(
@@ -1060,11 +972,6 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
-    // Native tooltip notifications require no owner-state access. They may
-    // arrive synchronously while a control message is still on the stack.
-    if msg == WM_NOTIFY {
-        return 0;
-    }
     if msg == WM_NCCREATE {
         let create = &*(l as *const CREATESTRUCTW);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, create.lpCreateParams as isize);
@@ -1160,19 +1067,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
         }
         WM_DPICHANGED => {
             (*ptr).frame_plot = None;
+            (*ptr).hover = None;
+            (*ptr).tooltip.hide();
             if !(*ptr).forced_dpi {
                 (*ptr).scale = (w & 0xffff) as f64 / 96.;
             }
             let fonts = Fonts::new((*ptr).scale);
-            if !(*ptr).tooltip.is_null() {
-                SendMessageW((*ptr).tooltip, WM_SETFONT, fonts.small as usize, 0);
-                SendMessageW(
-                    (*ptr).tooltip,
-                    TTM_SETMAXTIPWIDTH,
-                    0,
-                    (*ptr).px(560.) as isize,
-                );
-            }
             (*ptr).fonts = fonts;
             let r = &*(l as *const RECT);
             SetWindowPos(
@@ -1259,7 +1159,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                     start.moved = true;
                     (*ptr).drag_start = Some(start);
                     (*ptr).hover = None;
-                    tooltip_hide(hwnd, ptr);
+                    (*ptr).tooltip.hide();
                     // Captured dragging never enters a blocking caption move loop.
                     SetWindowPos(
                         hwnd,
@@ -1286,9 +1186,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             };
             (*ptr).hover = hover;
             if let Some(x) = hover {
-                tooltip_update(hwnd, ptr, x);
+                tooltip_update(ptr, x);
             } else {
-                tooltip_hide(hwnd, ptr);
+                (*ptr).tooltip.hide();
             }
             let mut track = TRACKMOUSEEVENT {
                 cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
@@ -1301,7 +1201,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
         }
         WM_MOUSELEAVE => {
             (*ptr).hover = None;
-            tooltip_hide(hwnd, ptr);
+            (*ptr).tooltip.hide();
             0
         }
         WM_CAPTURECHANGED => {
@@ -1310,7 +1210,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
         }
         WM_CONTEXTMENU => {
             (*ptr).drag_start = None;
-            tooltip_hide(hwnd, ptr);
+            (*ptr).tooltip.hide();
             menu(hwnd, ptr);
             0
         }
@@ -1388,7 +1288,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                     InvalidateRect(hwnd, null(), 0);
                 }
                 if let Some(x) = (*ptr).hover {
-                    tooltip_update(hwnd, ptr, x);
+                    tooltip_update(ptr, x);
                 }
             }
             if (*ptr).test_ui && (*ptr).started.elapsed().as_secs() >= 3 {
@@ -1602,9 +1502,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             diagnostic: arg("--diagnostic"),
             auto_exit: arg("--exit-after").and_then(|v| v.parse().ok()),
             demo: args.iter().any(|s| s == "--demo"),
-            tooltip: null_mut(),
-            tooltip_text: vec![0],
-            tooltip_on: false,
+            tooltip: tooltip::Tooltip::new(),
             theme_updating: false,
             applied_dark: None,
             drag_start: None,
@@ -1680,7 +1578,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 GetLastError()
             ));
         }
-        create_tooltip(hwnd, GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut App);
+        app.tooltip.create(hwnd);
         app.theme(hwnd);
         let tray_ok = app.tray_add(hwnd);
         if app.settings.topmost {

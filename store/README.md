@@ -1,6 +1,6 @@
 # Microsoft Store向けMSIX
 
-製品IDは `9PJ34ZZHSD01` です。Microsoft Storeには初回申請済みです。
+製品IDは `9PJ34ZZHSD01` です。[Microsoft Storeで開く](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
 Windows SDKがある環境でMSVC版のビルド後、次を実行します。
 

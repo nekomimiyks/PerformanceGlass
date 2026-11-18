@@ -8,7 +8,7 @@ Right-click > Language: follow Windows or choose a language. Changes are saved.
 Right-click > Taskbar graph: choose a metric for the mini graph (CPU usage by default).
 Right-click > Keep in system tray: enable tray residency (off by default).
 Right-click > CPU temperature monitoring: if PawnIO is missing or outdated, confirm to open the bundled official installer.
-The GitHub EXE is unsigned. Microsoft Store certification is pending.
+The GitHub EXE is unsigned. Microsoft Store: https://apps.microsoft.com/detail/9PJ34ZZHSD01
 
 ZIPをすべて展開し、PerformanceGlass.exeを起動してください。
 基本機能はインストール・管理者権限なしで使えます。
@@ -26,6 +26,6 @@ ZIPをすべて展開し、PerformanceGlass.exeを起動してください。
 詳細・スクリーンショット・プライバシー情報：
 https://github.com/nekomimiyks/PerformanceGlass
 
-GitHub版は未署名です。Microsoft Store版は認定中です。
+GitHub版は未署名です。Microsoft Store版：https://apps.microsoft.com/detail/9PJ34ZZHSD01
 セキュリティーソフトや端末の管理ポリシーによる起動制限は保証できません。
 ライセンスは同梱のLICENSE、第三者の表記はTHIRD_PARTY_NOTICES.txtをご覧ください。
