@@ -151,6 +151,14 @@ impl Counter {
     }
 }
 
+struct NetworkBaseline {
+    rx: u64,
+    tx: u64,
+    time: Instant,
+    group: usize,
+    connected: bool,
+}
+
 pub struct Collector {
     query: isize,
     cpu: Counter,
@@ -162,11 +170,29 @@ pub struct Collector {
     gpu_memory: Counter,
     sensors: crate::sensors::Sensors,
     base_mhz: f32,
-    previous: HashMap<u64, (u64, u64, Instant)>,
+    previous: HashMap<u64, NetworkBaseline>,
     engines: HashMap<String, f32>,
     retry_at: Instant,
 }
 impl Collector {
+    unsafe fn open_query() -> isize {
+        let mut query = 0;
+        if PdhOpenQueryW(null(), 0, &mut query) == 0 {
+            query
+        } else {
+            0
+        }
+    }
+
+    unsafe fn cpu_counter(query: isize) -> Counter {
+        let cpu = Counter::new(query, r"\Processor Information(_Total)\% Processor Time");
+        if cpu.handle == 0 {
+            Counter::new(query, r"\Processor(_Total)\% Processor Time")
+        } else {
+            cpu
+        }
+    }
+
     pub fn diagnostics(&self) -> String {
         format!(
             "query={},cpu=0x{:08x},speed=0x{:08x},disk=0x{:08x},gpu=0x{:08x},base_mhz={}",
@@ -180,11 +206,10 @@ impl Collector {
     }
     pub fn new() -> Self {
         unsafe {
-            let mut query = 0;
-            PdhOpenQueryW(null(), 0, &mut query);
+            let query = Self::open_query();
             let mut c = Self {
                 query,
-                cpu: Counter::new(query, r"\Processor Information(_Total)\% Processor Time"),
+                cpu: Self::cpu_counter(query),
                 speed: Counter::new(
                     query,
                     r"\Processor Information(_Total)\% Processor Performance",
@@ -205,9 +230,6 @@ impl Collector {
                 engines: HashMap::new(),
                 retry_at: Instant::now(),
             };
-            if c.cpu.handle == 0 {
-                c.cpu = Counter::new(query, r"\Processor(_Total)\% Processor Time");
-            }
             if query != 0 {
                 PdhCollectQueryData(query);
             }
@@ -223,6 +245,18 @@ impl Collector {
         unsafe {
             // Retry counters absent during startup (e.g. display-driver reset), at most once a minute.
             if self.retry_at.elapsed().as_secs() >= 60 {
+                if self.query == 0 {
+                    self.query = Self::open_query();
+                }
+                if self.cpu.handle == 0 {
+                    self.cpu = Self::cpu_counter(self.query);
+                }
+                if self.speed.handle == 0 {
+                    self.speed = Counter::new(
+                        self.query,
+                        r"\Processor Information(_Total)\% Processor Performance",
+                    );
+                }
                 if self.disk.handle == 0 {
                     self.disk = Counter::new(self.query, r"\PhysicalDisk(*)\% Idle Time");
                 }
@@ -312,7 +346,7 @@ impl Collector {
             std::slice::from_raw_parts((*table).Table.as_ptr(), (*table).NumEntries as usize);
         let time = Instant::now();
         let mut present = [false; 2];
-        let mut ready = [false; 2];
+        let mut ready = [true; 2];
         let mut traffic = [[0_f32; 2]; 2];
         let mut seen = Vec::with_capacity(rows.len());
         for row in rows {
@@ -328,21 +362,45 @@ impl Collector {
             let id = row.InterfaceLuid.Value;
             seen.push(id);
             present[group] = true;
-            s.connected[group] |= row.OperStatus == 1;
-            if let Some((rx, tx, at)) = self
-                .previous
-                .insert(id, (row.InOctets, row.OutOctets, time))
+            let connected = row.OperStatus == 1;
+            s.connected[group] |= connected;
+            let previous = self.previous.insert(
+                id,
+                NetworkBaseline {
+                    rx: row.InOctets,
+                    tx: row.OutOctets,
+                    time,
+                    group,
+                    connected,
+                },
+            );
+            if let Some(NetworkBaseline {
+                rx,
+                tx,
+                time: at,
+                connected: true,
+                ..
+            }) = previous
             {
                 let seconds = time.duration_since(at).as_secs_f32();
                 if seconds > 0. && row.InOctets >= rx && row.OutOctets >= tx {
                     traffic[group][0] += (row.InOctets - rx) as f32 * 8. / seconds / 1_000_000.;
                     traffic[group][1] += (row.OutOctets - tx) as f32 * 8. / seconds / 1_000_000.;
-                    ready[group] = true;
+                    continue;
                 }
+            }
+            if connected || previous.is_some_and(|baseline| baseline.connected) {
+                ready[group] = false;
             }
         }
         FreeMibTable(table as _);
-        self.previous.retain(|id, _| seen.contains(id));
+        self.previous.retain(|id, baseline| {
+            let present = seen.contains(id);
+            if !present && baseline.connected {
+                ready[baseline.group] = false;
+            }
+            present
+        });
         for group in 0..2 {
             if present[group] && ready[group] {
                 s.traffic[group] = traffic[group];

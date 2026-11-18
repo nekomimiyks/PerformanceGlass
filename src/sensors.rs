@@ -14,7 +14,7 @@ use windows_sys::Wdk::Graphics::Direct3D::*;
 use windows_sys::Win32::{Foundation::*, System::Diagnostics::ToolHelp::*};
 
 pub struct Sensors {
-    adapters: Vec<D3DKMT_ADAPTERINFO>,
+    adapters: Vec<(u32, u32)>,
     last_enumeration: Instant,
     provider_check: Option<Instant>,
     cpu: Option<CpuReader>,
@@ -95,10 +95,8 @@ impl Sensors {
     }
     fn enumerate(&mut self) {
         unsafe {
-            for a in self.adapters.drain(..) {
-                D3DKMTCloseAdapter(&D3DKMT_CLOSEADAPTER {
-                    hAdapter: a.hAdapter,
-                });
+            for (handle, _) in self.adapters.drain(..) {
+                D3DKMTCloseAdapter(&D3DKMT_CLOSEADAPTER { hAdapter: handle });
             }
             let mut query = D3DKMT_ENUMADAPTERS2 {
                 NumAdapters: 0,
@@ -108,11 +106,27 @@ impl Sensors {
                 && query.NumAdapters > 0
                 && query.NumAdapters <= 64
             {
-                let mut adapters = vec![zeroed(); query.NumAdapters as usize];
+                let mut adapters: Vec<D3DKMT_ADAPTERINFO> =
+                    vec![zeroed(); query.NumAdapters as usize];
                 query.pAdapters = adapters.as_mut_ptr();
                 if D3DKMTEnumAdapters2(&mut query) >= 0 {
                     adapters.truncate(query.NumAdapters as usize);
-                    self.adapters = adapters;
+                    self.adapters.extend(adapters.into_iter().map(|adapter| {
+                        let mut count = D3DKMT_PHYSICAL_ADAPTER_COUNT { Count: 0 };
+                        let mut query = D3DKMT_QUERYADAPTERINFO {
+                            hAdapter: adapter.hAdapter,
+                            Type: KMTQAITYPE_PHYSICALADAPTERCOUNT,
+                            pPrivateDriverData: &mut count as *mut _ as _,
+                            PrivateDriverDataSize: size_of::<D3DKMT_PHYSICAL_ADAPTER_COUNT>()
+                                as u32,
+                        };
+                        let count = if D3DKMTQueryAdapterInfo(&mut query) >= 0 {
+                            count.Count.clamp(1, 64)
+                        } else {
+                            1
+                        };
+                        (adapter.hAdapter, count)
+                    }));
                 }
             }
         }
@@ -124,20 +138,25 @@ impl Sensors {
         }
         let mut gpu = f32::NAN;
         unsafe {
-            for a in &self.adapters {
-                let mut value: D3DKMT_ADAPTER_PERFDATA = zeroed();
-                let mut query = D3DKMT_QUERYADAPTERINFO {
-                    hAdapter: a.hAdapter,
-                    Type: KMTQAITYPE_ADAPTERPERFDATA,
-                    pPrivateDriverData: &mut value as *mut _ as _,
-                    PrivateDriverDataSize: size_of::<D3DKMT_ADAPTER_PERFDATA>() as u32,
-                };
-                if D3DKMTQueryAdapterInfo(&mut query) >= 0
-                    && value.Temperature > 0
-                    && value.Temperature <= 1500
-                {
-                    let c = value.Temperature as f32 / 10.;
-                    gpu = if gpu.is_nan() { c } else { gpu.max(c) };
+            for &(handle, count) in &self.adapters {
+                for index in 0..count {
+                    let mut value = D3DKMT_ADAPTER_PERFDATA {
+                        PhysicalAdapterIndex: index,
+                        ..zeroed()
+                    };
+                    let mut query = D3DKMT_QUERYADAPTERINFO {
+                        hAdapter: handle,
+                        Type: KMTQAITYPE_ADAPTERPERFDATA,
+                        pPrivateDriverData: &mut value as *mut _ as _,
+                        PrivateDriverDataSize: size_of::<D3DKMT_ADAPTER_PERFDATA>() as u32,
+                    };
+                    if D3DKMTQueryAdapterInfo(&mut query) >= 0
+                        && value.Temperature > 0
+                        && value.Temperature <= 1500
+                    {
+                        let c = value.Temperature as f32 / 10.;
+                        gpu = if gpu.is_nan() { c } else { gpu.max(c) };
+                    }
                 }
             }
         }
@@ -267,15 +286,20 @@ impl CpuWmi {
             if !(0.0..=150.0).contains(&c) {
                 continue;
             }
+            if item.Get(w!("Name"), 0, &mut name, None, None).is_err() {
+                continue;
+            }
+            let Ok(name) = BSTR::try_from(&name) else {
+                continue;
+            };
+            let name = name.to_string().to_ascii_lowercase();
+            if name.contains("distance to tjmax") {
+                continue;
+            }
             let c = c as f32;
             hottest = if hottest.is_nan() { c } else { hottest.max(c) };
-            if item.Get(w!("Name"), 0, &mut name, None, None).is_ok() {
-                let name = BSTR::try_from(&name)
-                    .map(|n| n.to_string().to_lowercase())
-                    .unwrap_or_default();
-                if name.contains("package") || name.contains("tctl") || name.contains("tdie") {
-                    package = if package.is_nan() { c } else { package.max(c) };
-                }
+            if name.contains("package") || name.contains("tctl") || name.contains("tdie") {
+                package = if package.is_nan() { c } else { package.max(c) };
             }
         }
         if package.is_finite() {
@@ -299,10 +323,8 @@ impl Drop for CpuWmi {
 impl Drop for Sensors {
     fn drop(&mut self) {
         unsafe {
-            for a in self.adapters.drain(..) {
-                D3DKMTCloseAdapter(&D3DKMT_CLOSEADAPTER {
-                    hAdapter: a.hAdapter,
-                });
+            for (handle, _) in self.adapters.drain(..) {
+                D3DKMTCloseAdapter(&D3DKMT_CLOSEADAPTER { hAdapter: handle });
             }
         }
     }

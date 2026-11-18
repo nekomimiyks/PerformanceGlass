@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$TargetDirectory = (Join-Path ([IO.Path]::GetTempPath()) 'PerformanceGlass-build'),
     [ValidateSet('x86_64-pc-windows-gnu','x86_64-pc-windows-msvc')]
     [string]$Target = 'x86_64-pc-windows-gnu'

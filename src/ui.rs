@@ -31,6 +31,9 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 const TRAY_MESSAGE: u32 = WM_APP + 1;
 const TEST_UI: u32 = WM_APP + 2;
 const TIMES: [usize; 5] = [101, 102, 103, 104, 105];
+const OPEN_MENU: usize = 306;
+const ENABLE_STARTUP: usize = 303;
+const DISABLE_STARTUP: usize = 311;
 /// Minimum drawable area is physical 280x60 even at high DPI.
 unsafe fn minimum_window_size(scale: f64, frameless: bool) -> POINT {
     let mut r = RECT {
@@ -51,6 +54,17 @@ unsafe fn minimum_window_size(scale: f64, frameless: bool) -> POINT {
     POINT {
         x: r.right - r.left,
         y: r.bottom - r.top,
+    }
+}
+unsafe fn keep_window_reachable(monitor: HMONITOR, x: &mut i32, y: &mut i32, width: i32) {
+    let mut info: MONITORINFO = zeroed();
+    info.cbSize = size_of::<MONITORINFO>() as u32;
+    if GetMonitorInfoW(monitor, &mut info) != 0 {
+        let work = info.rcWork;
+        let grip_x = 48.min(work.right - work.left);
+        let grip_y = 24.min(work.bottom - work.top);
+        *x = (*x).clamp(work.left + grip_x - width, work.right - grip_x);
+        *y = (*y).clamp(work.top, work.bottom - grip_y);
     }
 }
 pub fn wide(s: &str) -> Vec<u16> {
@@ -280,6 +294,7 @@ impl App {
         }
         self.settings.x = rect.left;
         self.settings.y = rect.top;
+        self.settings.window_dpi = Some((self.scale * 96.).round() as u32);
         self.settings.width = ((rect.right - rect.left) as f64 / self.scale).round() as i32;
         self.settings.height = ((rect.bottom - rect.top) as f64 / self.scale).round() as i32;
         if !self.settings.frameless && self.settings.height >= 280 {
@@ -500,12 +515,7 @@ unsafe fn update_taskbar_button(hwnd: HWND, ptr: *mut App) {
     }
 }
 
-unsafe fn cpu_message(hwnd: HWND, ja: &str, en: &str) {
-    let message = if i18n::language() == i18n::Language::Ja {
-        ja
-    } else {
-        en
-    };
+unsafe fn cpu_message(hwnd: HWND, message: &str) {
     MessageBoxW(
         hwnd,
         wide(message).as_ptr(),
@@ -526,8 +536,7 @@ unsafe fn start_cpu_sensor(hwnd: HWND, ptr: *mut App, elevated: bool) -> bool {
             if (*ptr).cpu_manual && error.raw_os_error() != Some(ERROR_CANCELLED as i32) {
                 cpu_message(
                     hwnd,
-                    &format!("CPU温度の計測を開始できません。\n{error}"),
-                    &format!("Could not start CPU temperature monitoring.\n{error}"),
+                    &format!("{}\n{error}", tr("CPU温度の計測を開始できません。")),
                 );
             }
             false
@@ -547,16 +556,16 @@ unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
             Ok(Some(0)) => {
                 start_cpu_sensor(hwnd, ptr, false);
             }
-            Ok(Some(3010 | 1641)) => cpu_message(
-                hwnd,
-                "再起動後にCPU温度の計測を有効にしてください。",
-                "Enable CPU temperature monitoring after restarting Windows.",
-            ),
+            Ok(Some(3010 | 1641)) => {
+                cpu_message(hwnd, tr("再起動後にCPU温度の計測を有効にしてください。"))
+            }
             Ok(Some(code)) if code == ERROR_CANCELLED => {}
             result => cpu_message(
                 hwnd,
-                &format!("PawnIOのセットアップが完了しませんでした。\n{result:?}"),
-                &format!("PawnIO setup did not complete.\n{result:?}"),
+                &format!(
+                    "{}\n{result:?}",
+                    tr("PawnIOのセットアップが完了しませんでした。")
+                ),
             ),
         }
         return;
@@ -592,9 +601,8 @@ unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
             }
         }
         Poll::MissingDriver if manual && !(*ptr).cpu_install_attempted && cpu_sensor::installer_available() => {
-            let text = wide(cpu_sensor::label(
+            let text = wide(tr(
                 "CPU温度の取得にはPawnIOドライバーが必要です。同梱の署名済み公式インストーラーを起動しますか？ 続けると、Windowsが管理者権限の許可を求めます。",
-                "Reading CPU temperature requires the PawnIO driver. Open the bundled signed official installer? Windows will ask for administrator permission.",
             ));
             (*ptr).cpu_install_attempted = true;
             if MessageBoxW(hwnd, text.as_ptr(), wide("PawnIO").as_ptr(), MB_YESNO | MB_DEFBUTTON2 | MB_ICONQUESTION) == IDYES {
@@ -606,21 +614,18 @@ unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
                     Err(error) if error.raw_os_error() == Some(ERROR_CANCELLED as i32) => {}
                     Err(error) => cpu_message(
                         hwnd,
-                        &format!("PawnIOのセットアップを開けません。\n{error}"),
-                        &format!("Could not open PawnIO setup.\n{error}"),
+                        &format!("{}\n{error}", tr("PawnIOのセットアップを開けません。")),
                     ),
                 }
             }
         }
         Poll::MissingDriver if manual => cpu_message(
             hwnd,
-            "CPU温度の取得には PawnIO ドライバーが必要です。対応バージョン（2.0 以降）を導入してから、再度お試しください。\nhttps://pawnio.eu/",
-            "CPU temperature requires the PawnIO driver (2.0 or later). Install it and try again.\nhttps://pawnio.eu/",
+            &format!("{}\nhttps://pawnio.eu/", tr("CPU温度の取得には PawnIO ドライバーが必要です。対応バージョン（2.0 以降）を導入してから、再度お試しください。")),
         ),
         Poll::AdminRequired | Poll::Unsupported | Poll::Failed if manual => cpu_message(
             hwnd,
-            "この環境ではCPU温度を取得できませんでした。",
-            "CPU temperature could not be read on this system.",
+            tr("この環境ではCPU温度を取得できませんでした。"),
         ),
         _ => {}
     }
@@ -663,6 +668,7 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
         101..=105 => {
             (*ptr).settings.range = id - 101;
             (*ptr).hover = None;
+            (*ptr).tooltip.hide();
         }
         201..=206 => (*ptr).settings.visible[id - 201] = !(*ptr).settings.visible[id - 201],
         301 => {
@@ -682,8 +688,8 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             );
         }
         302 => hide(hwnd, ptr),
-        303 => {
-            if let Err(e) = settings::set_startup(!settings::startup_enabled(), hwnd) {
+        ENABLE_STARTUP | DISABLE_STARTUP => {
+            if let Err(e) = settings::set_startup(id == ENABLE_STARTUP, hwnd) {
                 MessageBoxW(
                     hwnd,
                     wide(&e).as_ptr(),
@@ -700,7 +706,7 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             return;
         }
         305 => show(hwnd, ptr),
-        306 => menu(hwnd, ptr),
+        OPEN_MENU => menu(hwnd, ptr),
         308 if (*ptr).cpu_helper && (*ptr).cpu_installer.is_none() => {
             if (*ptr).cpu_reader.is_some() {
                 KillTimer(hwnd, 3);
@@ -810,7 +816,6 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             (*ptr).update_position(hwnd);
             (*ptr).render_now(hwnd);
         }
-        308 => menu(hwnd, ptr),
         _ => return,
     }
     (*ptr).save_settings();
@@ -837,30 +842,24 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
         (*ptr).settings.frameless,
     );
     crate::packaged_startup::refresh();
+    let startup_enabled = settings::startup_enabled();
     add(
-        303,
+        if startup_enabled {
+            DISABLE_STARTUP
+        } else {
+            ENABLE_STARTUP
+        },
         tr("Windowsログオン時に起動"),
-        settings::startup_enabled(),
+        startup_enabled,
     );
     add(310, tr("タスクトレイに常駐"), (*ptr).settings.tray_enabled);
     if (*ptr).settings.tray_enabled {
         add(302, tr("トレイに格納"), false);
     }
     if (*ptr).cpu_helper {
-        add(
-            308,
-            cpu_sensor::label("CPU温度の計測", "CPU temperature monitoring"),
-            (*ptr).cpu_reader.is_some(),
-        );
+        add(308, tr("CPU温度の計測"), (*ptr).cpu_reader.is_some());
         if (*ptr).settings.cpu_permission != Permission::Ask {
-            add(
-                309,
-                cpu_sensor::label(
-                    "管理者権限の選択をリセット",
-                    "Reset administrator access choice",
-                ),
-                false,
-            );
+            add(309, tr("管理者権限の選択をリセット"), false);
         }
     }
     let taskbar = CreatePopupMenu();
@@ -941,8 +940,17 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
         );
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    let plotted = {
+        let history = (*ptr).data.lock().unwrap();
+        let end = if (*ptr).demo {
+            history.latest().time
+        } else {
+            metrics::now()
+        };
+        history.plotted_since(end - RANGES[(*ptr).settings.range] as f64)
+    };
     for (i, name) in names().iter().enumerate() {
-        if (*ptr).available[i] || (*ptr).chart_available[i] {
+        if plotted[i] {
             add(
                 201 + i,
                 &i18n::message("線を表示: {}", name),
@@ -1219,6 +1227,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_KEYDOWN => {
+            if l & (1 << 30) != 0 {
+                return 0;
+            }
             match w {
                 0x31..=0x35 => command(hwnd, ptr, 101 + w - 0x31),
                 0x54 => command(hwnd, ptr, 301),
@@ -1384,12 +1395,17 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         } else {
             "Local\\PerformanceGlass.Native.Singleton".into()
         };
+        let class_name = if test_mode {
+            wide(&format!("{CLASS}.QA.{}", std::process::id()))
+        } else {
+            wide(CLASS)
+        };
         let mutex = CreateMutexW(null(), 0, wide(&mutex_name).as_ptr());
         if mutex.is_null() {
             return Err(tr("アプリの起動ロックを作成できません。").into());
         }
         if GetLastError() == ERROR_ALREADY_EXISTS {
-            let existing = FindWindowW(wide(CLASS).as_ptr(), null());
+            let existing = FindWindowW(class_name.as_ptr(), null());
             if !existing.is_null() {
                 ShowWindow(existing, SW_RESTORE);
                 PostMessageW(existing, WM_COMMAND, 305, 0);
@@ -1398,7 +1414,6 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             CloseHandle(mutex);
             return Ok(());
         }
-        let class_name = wide(CLASS);
         let owned_icon = make_icon(instance);
         crate::packaged_startup::refresh();
         let icon = if owned_icon.is_null() {
@@ -1450,10 +1465,13 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         if let Some(range) = arg("--range").and_then(|s| s.parse::<usize>().ok()) {
             settings.range = range.min(4);
         }
-        let scale = arg("--dpi")
+        let forced_scale = arg("--dpi")
             .and_then(|s| s.parse::<f64>().ok())
-            .map(|dpi| dpi.clamp(96., 384.) / 96.)
-            .unwrap_or_else(|| GetDpiForSystem() as f64 / 96.);
+            .filter(|dpi| dpi.is_finite())
+            .map(|dpi| dpi.clamp(96., 384.) / 96.);
+        let scale = forced_scale.unwrap_or_else(|| {
+            settings.window_dpi.unwrap_or_else(|| GetDpiForSystem()) as f64 / 96.
+        });
         let size = arg("--size")
             .and_then(|s| {
                 s.split_once('x')
@@ -1512,7 +1530,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 "light" => Some(false),
                 _ => None,
             }),
-            forced_dpi: arg("--dpi").is_some(),
+            forced_dpi: forced_scale.is_some(),
             benchmark_render: args.iter().any(|s| s == "--benchmark-render"),
             paint_count: 0,
             profile_graph_s: 0.,
@@ -1529,6 +1547,8 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         });
         let minimum = minimum_window_size(scale, app.settings.frameless);
         let initial_size = (initial_size.0.max(minimum.x), initial_size.1.max(minimum.y));
+        let saved_position = (app.settings.x, app.settings.y);
+        let saved_size = (app.settings.width, app.settings.height);
         let mut initial = RECT {
             left: app.settings.x,
             top: app.settings.y,
@@ -1537,21 +1557,11 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         };
         if app.settings.x != i32::MIN && app.settings.y != i32::MIN {
             let monitor = MonitorFromRect(&initial, MONITOR_DEFAULTTONEAREST);
-            let mut info: MONITORINFO = zeroed();
-            info.cbSize = size_of::<MONITORINFO>() as u32;
-            if GetMonitorInfoW(monitor, &mut info) != 0 {
-                let work = info.rcWork;
-                let grip_x = 48.min(work.right - work.left);
-                let grip_y = 24.min(work.bottom - work.top);
-                initial.left = initial
-                    .left
-                    .clamp(work.left + grip_x - initial_size.0, work.right - grip_x);
-                initial.top = initial.top.clamp(work.top, work.bottom - grip_y);
-            }
+            keep_window_reachable(monitor, &mut initial.left, &mut initial.top, initial_size.0);
         }
         let hwnd = CreateWindowExW(
             0,
-            wide(CLASS).as_ptr(),
+            class_name.as_ptr(),
             wide("Performance Glass").as_ptr(),
             if app.settings.frameless {
                 crate::window_style::with_frame(0, true)
@@ -1577,6 +1587,27 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
                 tr("ウィンドウを作成できません"),
                 GetLastError()
             ));
+        }
+        if !app.forced_dpi {
+            let dpi = GetDpiForWindow(hwnd);
+            if dpi != 0 && dpi as f64 != 96. * scale {
+                app.scale = dpi as f64 / 96.;
+                app.fonts = Fonts::new(app.scale);
+                let minimum = minimum_window_size(app.scale, app.settings.frameless);
+                let (width, height) = size
+                    .unwrap_or_else(|| (app.px(saved_size.0 as f64), app.px(saved_size.1 as f64)));
+                let width = width.max(minimum.x);
+                let height = height.max(minimum.y);
+                let (mut x, mut y) = saved_position;
+                let mut flags = SWP_NOZORDER | SWP_NOACTIVATE;
+                if x == i32::MIN || y == i32::MIN {
+                    flags |= SWP_NOMOVE;
+                } else {
+                    let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                    keep_window_reachable(monitor, &mut x, &mut y, width);
+                }
+                SetWindowPos(hwnd, null_mut(), x, y, width, height, flags);
+            }
         }
         app.tooltip.create(hwnd);
         app.theme(hwnd);

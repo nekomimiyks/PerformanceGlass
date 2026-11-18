@@ -96,6 +96,7 @@ internal static class Program
                 float value = sensor.Value.Value;
                 if (float.IsNaN(value) || value <= 0 || value > 150) continue;
                 string name = sensor.Name;
+                if (name.IndexOf("Distance to TjMax", StringComparison.OrdinalIgnoreCase) >= 0) continue;
                 int priority = name.IndexOf("Tctl/Tdie", StringComparison.OrdinalIgnoreCase) >= 0 ? 3
                     : name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ? 2
                     : name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 ? 1 : 0;

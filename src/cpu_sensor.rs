@@ -130,10 +130,7 @@ pub unsafe fn install_driver(hwnd: HWND) -> std::io::Result<OwnedHandle> {
     if !official_installer(&bytes) {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
-            label(
-                "同梱版の SHA-256 と一致しません。",
-                "The bundled installer SHA-256 does not match.",
-            ),
+            i18n::tr("同梱版の SHA-256 と一致しません。"),
         ));
     }
     launch_elevated(hwnd, &path, None, SW_SHOWNORMAL)
@@ -154,19 +151,14 @@ pub unsafe fn installer_exit(process: &OwnedHandle) -> std::io::Result<Option<u3
     }
 }
 
-pub fn label(ja: &'static str, en: &'static str) -> &'static str {
-    if i18n::language() == i18n::Language::Ja {
-        ja
-    } else {
-        en
-    }
-}
+const TEMPERATURE_FRESHNESS: Duration = Duration::from_secs(3);
+const PACKET_TIMEOUT: Duration = Duration::from_secs(12);
 
 pub fn temperature() -> f32 {
     LATEST
         .lock()
         .unwrap()
-        .filter(|(at, _)| at.elapsed() <= Duration::from_secs(3))
+        .filter(|(at, _)| at.elapsed() <= TEMPERATURE_FRESHNESS)
         .map_or(f32::NAN, |(_, value)| value)
 }
 
@@ -183,6 +175,8 @@ pub struct Reader {
     pid: u32,
     connected: bool,
     last_packet: Instant,
+    last_poll: Instant,
+    discard_backlog: bool,
 }
 
 impl Reader {
@@ -206,11 +200,14 @@ impl Reader {
         if pipe == INVALID_HANDLE_VALUE {
             return Err(std::io::Error::last_os_error());
         }
+        let now = Instant::now();
         let mut reader = Self {
             pipe,
             pid: 0,
             connected: false,
-            last_packet: Instant::now(),
+            last_packet: now,
+            last_poll: now,
+            discard_backlog: false,
         };
         reader.pid = if elevated {
             let process = launch_elevated(hwnd, &exe, Some(&name), SW_HIDE)?;
@@ -223,18 +220,27 @@ impl Reader {
                 .id()
         };
         reader.last_packet = Instant::now();
+        reader.last_poll = reader.last_packet;
         Ok(reader)
     }
 
     pub unsafe fn poll(&mut self) -> Poll {
-        if self.last_packet.elapsed() > Duration::from_secs(12) {
-            return Poll::Failed;
+        let now = Instant::now();
+        let pause = now.duration_since(self.last_poll);
+        if pause > PACKET_TIMEOUT {
+            // After sleep or a blocked message loop the helper may need time to run again.
+            self.last_packet = now;
         }
+        if pause > TEMPERATURE_FRESHNESS {
+            self.discard_backlog = true;
+            *LATEST.lock().unwrap() = None;
+        }
+        self.last_poll = now;
         if !self.connected {
             if ConnectNamedPipe(self.pipe, null_mut()) == 0
                 && GetLastError() != ERROR_PIPE_CONNECTED
             {
-                return Poll::Running;
+                return self.waiting();
             }
             let mut pid = 0;
             if GetNamedPipeClientProcessId(self.pipe, &mut pid) == 0 || pid != self.pid {
@@ -249,7 +255,8 @@ impl Reader {
             let mut count = 0;
             if ReadFile(self.pipe, packet.as_mut_ptr(), 4, &mut count, null_mut()) == 0 {
                 return if GetLastError() == ERROR_NO_DATA {
-                    Poll::Running
+                    self.discard_backlog = false;
+                    self.waiting()
                 } else {
                     Poll::Failed
                 };
@@ -264,12 +271,22 @@ impl Reader {
                 -20_003 => return Poll::Unsupported,
                 -20_004 => *LATEST.lock().unwrap() = None,
                 value @ -5000..=15000 => {
-                    *LATEST.lock().unwrap() = Some((self.last_packet, value as f32 / 100.));
+                    if !self.discard_backlog {
+                        *LATEST.lock().unwrap() = Some((self.last_packet, value as f32 / 100.));
+                    }
                 }
                 _ => return Poll::Failed,
             }
         }
         Poll::Running
+    }
+
+    fn waiting(&self) -> Poll {
+        if self.last_packet.elapsed() > PACKET_TIMEOUT {
+            Poll::Failed
+        } else {
+            Poll::Running
+        }
     }
 }
 
@@ -282,15 +299,11 @@ impl Drop for Reader {
 
 pub unsafe fn confirm(hwnd: HWND) -> (bool, bool) {
     let title = wide("Performance Glass");
-    let heading = wide(label(
-        "CPU温度の取得に管理者権限を許可しますか？",
-        "Allow administrator access to read CPU temperature?",
-    ));
-    let info = wide(label(
+    let heading = wide(i18n::tr("CPU温度の取得に管理者権限を許可しますか？"));
+    let info = wide(i18n::tr(
         "CPU温度を読み取る補助プログラムを起動します。この後、Windowsのユーザーアカウント制御が表示されます。",
-        "The CPU temperature helper will start. Windows User Account Control will ask for permission.",
     ));
-    let remember = wide(label("今後この選択を覚える", "Remember this choice"));
+    let remember = wide(i18n::tr("今後この選択を覚える"));
     let config = TASKDIALOGCONFIG {
         cbSize: size_of::<TASKDIALOGCONFIG>() as u32,
         hwndParent: hwnd,

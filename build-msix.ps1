@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Executable = (Join-Path $PSScriptRoot 'PerformanceGlass.exe'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'dist')
 )
@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 Copy-Item -LiteralPath $Executable -Destination (Join-Path $stage 'PerformanceGlass.exe')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE'),(Join-Path $PSScriptRoot 'THIRD_PARTY_NOTICES.txt') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'store\Assets') -Destination (Join-Path $stage 'Assets') -Recurse
-[xml]$manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'store\AppxManifest.xml') -Raw
+[xml]$manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'store\AppxManifest.xml') -Raw -Encoding UTF8
 $manifest.Package.Identity.Version = "$version.0"
 $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
 $output = Join-Path $OutputDirectory "PerformanceGlass-$version-x64.msix"

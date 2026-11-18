@@ -84,7 +84,7 @@ impl History {
         self.last_plot_time
             .map(|time| time >= start.max(oldest.time))
     }
-    pub fn nearest(&self, time: f64) -> Option<Sample> {
+    fn nearest(&self, time: f64, accepts: impl Fn(f64) -> bool) -> Option<Sample> {
         // Binary search over logical VecDeque indices, including after wraparound.
         let mut lo = 0;
         let mut hi = self.samples.len();
@@ -96,8 +96,13 @@ impl History {
                 hi = mid;
             }
         }
-        let a = self.samples.get(lo).copied();
-        let b = lo.checked_sub(1).and_then(|i| self.samples.get(i)).copied();
+        let in_range = |sample: &&Sample| accepts(sample.time);
+        let a = self.samples.get(lo).filter(in_range).copied();
+        let b = lo
+            .checked_sub(1)
+            .and_then(|i| self.samples.get(i))
+            .filter(in_range)
+            .copied();
         match (a, b) {
             (Some(a), Some(b)) => Some(if (a.time - time).abs() < (b.time - time).abs() {
                 a
@@ -106,6 +111,32 @@ impl History {
             }),
             (a, b) => a.or(b),
         }
+    }
+    pub fn sample_for_column(
+        &self,
+        end: f64,
+        seconds: u64,
+        width: usize,
+        x: usize,
+    ) -> Option<Sample> {
+        let start = end - seconds as f64;
+        let last = width.saturating_sub(1).max(1);
+        let span = seconds as f64 / last as f64;
+        let left = (start + x as f64 * span).min(end);
+        let right = (left + span).min(end);
+        let target = (left + right) / 2.;
+        let tolerance = ((right - left) / 2.).max(2.5);
+        let exact_column = right - left >= 5.;
+        let sample = self.nearest(target, |time| {
+            time >= start
+                && time <= end
+                && if exact_column {
+                    Self::plot_column(time, start, seconds, width) == x
+                } else {
+                    (time - target).abs() <= tolerance
+                }
+        })?;
+        Some(sample)
     }
     #[allow(dead_code)] // Convenience wrapper for reference tests and standalone profiling.
     pub fn graph(&self, end: f64, seconds: u64, width: usize, visible: &[bool; 6]) -> Graph {
@@ -151,8 +182,7 @@ impl History {
             if sample.time > end {
                 continue;
             }
-            let x = (((sample.time - start) / seconds as f64 * (width - 1) as f64) as usize)
-                .min(width - 1);
+            let x = Self::plot_column(sample.time, start, seconds, width);
             for (b, &v) in buckets[x].iter_mut().zip(&sample.values) {
                 if !v.is_finite() {
                     continue;
@@ -174,6 +204,10 @@ impl History {
             }
         }
         maximum
+    }
+
+    fn plot_column(time: f64, start: f64, seconds: u64, width: usize) -> usize {
+        (((time - start) / seconds as f64 * (width - 1) as f64) as usize).min(width - 1)
     }
 }
 #[derive(Clone, Copy, Debug)]
@@ -276,8 +310,61 @@ mod tests {
         }
         assert_eq!(h.samples.len(), CAPACITY);
         assert_eq!(h.samples.front().unwrap().time, 20.);
-        assert_eq!(h.nearest(35.2).unwrap().time, 35.);
-        assert_eq!(h.nearest(-1.).unwrap().time, 20.);
+        assert_eq!(h.nearest(35.2, |_| true).unwrap().time, 35.);
+        assert_eq!(h.nearest(-1., |_| true).unwrap().time, 20.);
+    }
+    #[test]
+    fn long_range_hover_matches_populated_columns_without_filling_gaps() {
+        let mut history = History::new();
+        for time in [100., 101., 198., 199.] {
+            history.push(Sample {
+                time,
+                ..Sample::default()
+            });
+        }
+        assert_eq!(
+            history
+                .sample_for_column(200., 43_200, 901, 899)
+                .unwrap()
+                .time,
+            198.
+        );
+        assert!(history.sample_for_column(200., 43_200, 901, 896).is_none());
+        assert!(history.sample_for_column(220., 43_200, 901, 900).is_none());
+        assert_eq!(
+            history.sample_for_column(200., 60, 901, 900).unwrap().time,
+            199.
+        );
+    }
+    #[test]
+    fn hover_ignores_samples_collected_after_the_graph_was_drawn() {
+        let mut history = History::new();
+        for time in [100., 101.] {
+            history.push(Sample {
+                time,
+                ..Sample::default()
+            });
+        }
+        assert_eq!(
+            history.sample_for_column(100.8, 60, 901, 900).unwrap().time,
+            100.
+        );
+    }
+    #[test]
+    fn hover_on_a_column_boundary_only_selects_the_drawn_column() {
+        let mut history = History::new();
+        history.push(Sample {
+            time: 152.,
+            ..Sample::default()
+        });
+        assert!(history.sample_for_column(200., 43_200, 901, 898).is_none());
+        assert_eq!(
+            history
+                .sample_for_column(200., 43_200, 901, 899)
+                .unwrap()
+                .time,
+            152.
+        );
     }
     #[test]
     fn peaks_missing_values_and_real_time_gaps() {

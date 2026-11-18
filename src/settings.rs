@@ -24,6 +24,7 @@ pub struct Settings {
     pub normal_height: i32,
     pub x: i32,
     pub y: i32,
+    pub window_dpi: Option<u32>,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -42,6 +43,7 @@ impl Default for Settings {
             normal_height: 480,
             x: i32::MIN,
             y: i32::MIN,
+            window_dpi: None,
         }
     }
 }
@@ -95,6 +97,9 @@ impl Settings {
                         }
                         "x" => s.x = value.parse().unwrap_or(i32::MIN),
                         "y" => s.y = value.parse().unwrap_or(i32::MIN),
+                        "window_dpi" => {
+                            s.window_dpi = value.parse().ok().filter(|dpi| (48..=960).contains(dpi))
+                        }
                         _ => {}
                     }
                 }
@@ -121,8 +126,9 @@ impl Settings {
             .map(|v| if *v { '1' } else { '0' })
             .collect();
         format!(
-            "language={}\nrange={}\nvisible={}\ntopmost={}\nframeless={}\nwidth={}\nheight={}\nnormal_width={}\nnormal_height={}\nx={}\ny={}\ntaskbar_metric={}\ncpu_permission={}\ntray_enabled={}\n",
+            "language={}\nrange={}\nvisible={}\ntopmost={}\nframeless={}\nwidth={}\nheight={}\nnormal_width={}\nnormal_height={}\nx={}\ny={}\nwindow_dpi={}\ntaskbar_metric={}\ncpu_permission={}\ntray_enabled={}\n",
             self.language.map(|v| v.tag()).unwrap_or("auto"), self.range, visible, self.topmost as u8, self.frameless as u8, self.width, self.height,self.normal_width,self.normal_height,self.x,self.y,
+            self.window_dpi.unwrap_or(0),
             self.taskbar_metric.map_or("off", |index| crate::taskbar_graph::METRICS[index].key),
             self.cpu_permission.key(), self.tray_enabled as u8
         )
@@ -212,11 +218,13 @@ mod tests {
         let settings = Settings {
             width: 70, // 280 physical pixels at 400% scaling.
             normal_width: 140,
+            window_dpi: Some(384),
             ..Settings::default()
         };
         let restored = Settings::from_text(&settings.to_text());
         assert_eq!(restored.width, 70);
         assert_eq!(restored.normal_width, 140);
+        assert_eq!(restored.window_dpi, Some(384));
     }
     #[test]
     fn taskbar_choice_position_and_sensor_permission_survive_restart() {

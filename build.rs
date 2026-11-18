@@ -1,10 +1,41 @@
-use std::{env, fs, path::PathBuf, process::Command};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+fn gnu_manifest_override(out: &Path) {
+    // Some MinGW distributions add their own RT_MANIFEST through GCC's endfile
+    // spec. Keep the CRT objects and omit just that resource so our manifest wins.
+    let linker = env::var_os("RUSTC_LINKER").unwrap_or_else(|| "x86_64-w64-mingw32-gcc".into());
+    let Ok(specs) = Command::new(linker).arg("-dumpspecs").output() else {
+        return;
+    };
+    if !specs.status.success() {
+        return;
+    }
+    let specs = String::from_utf8_lossy(&specs.stdout);
+    let original = specs
+        .lines()
+        .skip_while(|line| *line != "*endfile:")
+        .skip(1)
+        .take_while(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let without_manifest = original.replace("%{!shared:%:if-exists(default-manifest.o%s)}", "");
+    if without_manifest != original {
+        let path = out.join("app-endfile.specs");
+        fs::write(&path, format!("*endfile:\n{without_manifest}\n\n")).unwrap();
+        println!("cargo:rustc-link-arg-bins=-specs={}", path.display());
+    }
+}
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=assets/icon/performance-glass.ico");
     println!("cargo:rerun-if-env-changed=WINDRES");
     println!("cargo:rerun-if-env-changed=RC");
+    println!("cargo:rerun-if-env-changed=RUSTC_LINKER");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
@@ -124,4 +155,5 @@ END
         "cargo:rustc-link-arg-bins={}",
         out.join("app-resources.o").display()
     );
+    gnu_manifest_override(&out);
 }

@@ -33,7 +33,10 @@ fn main() {
             .get(i + 2)
             .cloned()
             .unwrap_or_else(|| "probe.csv".into());
-        probe(count, &output);
+        if let Err(error) = probe(count, &output) {
+            eprintln!("{output}: {error}");
+            std::process::exit(1);
+        }
         return;
     }
     let data = Arc::new(Mutex::new(History::new()));
@@ -113,21 +116,19 @@ fn main() {
     }
 }
 
-fn probe(count: usize, path: &str) {
-    let Ok(mut file) = File::create(path) else {
-        return;
-    };
+fn probe(count: usize, path: &str) -> std::io::Result<()> {
+    let mut file = File::create(path)?;
     let mut collector = metrics::Collector::new();
-    let _ = writeln!(file, "# {}", collector.diagnostics());
+    writeln!(file, "# {}", collector.diagnostics())?;
     let start = Instant::now();
     let cpu_start = process_cpu();
-    let _ = writeln!(file,"time,cpu_percent,memory_percent,disk_percent,ethernet_mbps,wifi_mbps,gpu_percent,cpu_ghz,memory_used_gib,memory_total_gib,disk_read_mbs,disk_write_mbs,cpu_c,gpu_c,collection_ms,working_set_mib,gpu_memory_gib");
+    writeln!(file,"time,cpu_percent,memory_percent,disk_percent,ethernet_mbps,wifi_mbps,gpu_percent,cpu_ghz,memory_used_gib,memory_total_gib,disk_read_mbs,disk_write_mbs,cpu_c,gpu_c,collection_ms,working_set_mib,gpu_memory_gib")?;
     for _ in 0..count {
         std::thread::sleep(Duration::from_secs(1));
         let at = Instant::now();
         let s = collector.sample();
         let ms = at.elapsed().as_secs_f64() * 1000.;
-        let _ = writeln!(
+        writeln!(
             file,
             "{:.3},{:.3},{:.3},{:.3},{:.5},{:.5},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.1},{:.1},{:.3},{:.3},{:.3}",
             s.time,
@@ -143,15 +144,15 @@ fn probe(count: usize, path: &str) {
             s.disk_io[0],s.disk_io[1],s.temperatures[0],s.temperatures[1],
             ms,
             working_set(), s.gpu_memory
-        );
+        )?;
     }
     let elapsed = start.elapsed().as_secs_f64();
     let cpu = process_cpu() - cpu_start;
-    let _ = writeln!(
+    writeln!(
         file,
         "# elapsed_s={elapsed:.3},process_cpu_s={cpu:.5},one_core_percent={:.4}",
         100. * cpu / elapsed
-    );
+    )
 }
 pub fn process_cpu() -> f64 {
     use windows_sys::Win32::{Foundation::FILETIME, System::Threading::*};

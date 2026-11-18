@@ -284,7 +284,7 @@ impl App {
                 );
                 self.hits.push(Hit {
                     rect: r,
-                    command: 308,
+                    command: OPEN_MENU,
                 });
             }
             let settings_width = (self.measure(dc, tr("設定 ···"), self.fonts.small)
@@ -299,7 +299,7 @@ impl App {
             self.text(dc, tr("設定 ···"), r, self.fonts.small, p.muted, DT_CENTER);
             self.hits.push(Hit {
                 rect: r,
-                command: 306,
+                command: OPEN_MENU,
             });
             if self.demo && w > self.px(530.) {
                 self.label(
@@ -786,14 +786,18 @@ impl App {
         }
         let end = self.chart_end;
         let range = RANGES[self.settings.range];
-        let target = end - range as f64
-            + ((x - self.plot.left) as f64 / (self.plot.right - self.plot.left - 1).max(1) as f64)
-                .min(1.)
-                * range as f64;
-        let s = self.data.lock().unwrap().nearest(target)?;
-        if (s.time - target).abs() > 2.5 {
+        let width = self.graph.buckets.len();
+        if width == 0 {
             return None;
         }
+        let pixel_span = (self.plot.right - self.plot.left - 1).max(1) as i64;
+        let offset = i64::from(x - self.plot.left).min(pixel_span);
+        let column = ((offset * (width - 1) as i64 + pixel_span / 2) / pixel_span) as usize;
+        let s = self
+            .data
+            .lock()
+            .unwrap()
+            .sample_for_column(end, range, width, column)?;
         let mut rows = vec![format!(
             "{}{}",
             i18n::message("{}前", &format_age((end - s.time).max(0.) as u64)),
