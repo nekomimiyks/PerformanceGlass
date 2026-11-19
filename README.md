@@ -1,5 +1,7 @@
 # Performance Glass
 
+**日本語** · [English](docs/readme/README.en.md) · [简体中文](docs/readme/README.zh-Hans.md) · [繁體中文](docs/readme/README.zh-Hant.md) · [한국어](docs/readme/README.ko.md) · [Deutsch](docs/readme/README.de.md) · [Français](docs/readme/README.fr.md) · [Español](docs/readme/README.es.md) · [Português](docs/readme/README.pt.md) · [Italiano](docs/readme/README.it.md) · [Русский](docs/readme/README.ru.md) · [Bahasa Indonesia](docs/readme/README.id.md)
+
 Windows 10 / 11（x64）向けの軽量な常駐パフォーマンスモニターです。
 
 - CPU・メモリ・ディスク・Ethernet・Wi-Fi・GPUを1つのグラフに重ねて約1秒ごとに更新
@@ -18,6 +20,8 @@ Microsoft Storeからも入手できます。[Microsoft Store版](https://apps.m
 GitHub版EXEは未署名です。
 
 ## スクリーンショット
+
+掲載画像はデモデータで撮影しています。
 
 | 表示 | ダーク | ライト |
 | --- | --- | --- |
