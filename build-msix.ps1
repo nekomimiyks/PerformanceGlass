@@ -1,8 +1,13 @@
 ﻿param(
     [string]$Executable = (Join-Path $PSScriptRoot 'PerformanceGlass.exe'),
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'dist')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot 'dist'),
+    [string]$PackageName = $env:STORE_PACKAGE_NAME,
+    [string]$PackagePublisher = $env:STORE_PACKAGE_PUBLISHER
 )
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($PackageName) -or [string]::IsNullOrWhiteSpace($PackagePublisher)) {
+    throw 'Partner Centerの製品ID画面にあるPackage/Identity/NameとPublisherを指定してください。'
+}
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $version = (Get-Item -LiteralPath $Executable).VersionInfo.ProductVersion
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'EXEの製品バージョンを取得できません。' }
@@ -21,6 +26,8 @@ Copy-Item -LiteralPath $Executable -Destination (Join-Path $stage 'PerformanceGl
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'LICENSE'),(Join-Path $PSScriptRoot 'THIRD_PARTY_NOTICES.txt') -Destination $stage
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'store\Assets') -Destination (Join-Path $stage 'Assets') -Recurse
 [xml]$manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'store\AppxManifest.xml') -Raw -Encoding UTF8
+$manifest.Package.Identity.Name = $PackageName
+$manifest.Package.Identity.Publisher = $PackagePublisher
 $manifest.Package.Identity.Version = "$version.0"
 $manifest.Save((Join-Path $stage 'AppxManifest.xml'))
 $output = Join-Path $OutputDirectory "PerformanceGlass-$version-x64.msix"

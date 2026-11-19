@@ -64,6 +64,10 @@ jobs:
           (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $zip | Add-Content -LiteralPath SHA256SUMS.txt
           @("Commit: $env:GITHUB_SHA", 'Target: x86_64-pc-windows-msvc', 'CRT: static', 'Authenticode: unsigned', (rustc +stable -V)) | Set-Content -LiteralPath build-info.txt
       - name: Package for Microsoft Store
+        if: ${{ vars.STORE_PACKAGE_NAME != '' && vars.STORE_PACKAGE_PUBLISHER != '' }}
+        env:
+          STORE_PACKAGE_NAME: ${{ vars.STORE_PACKAGE_NAME }}
+          STORE_PACKAGE_PUBLISHER: ${{ vars.STORE_PACKAGE_PUBLISHER }}
         shell: pwsh
         run: |
           .\build-msix.ps1 -OutputDirectory (Join-Path $PWD 'dist')
