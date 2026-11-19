@@ -49,4 +49,4 @@ PowerShellとRustに加え、GNU版はMinGW（`windres.exe`を含む）、MSVC�
 .\build.ps1 -Target x86_64-pc-windows-msvc
 ```
 
-[性能測定](docs/performance.md) · [プライバシー](docs/privacy.md) · [コード署名](docs/code-signing.md) · [MITライセンス](LICENSE) · [第三者表記](THIRD_PARTY_NOTICES.txt)
+[プライバシー](docs/privacy.md) · [MITライセンス](LICENSE) · [第三者表記](THIRD_PARTY_NOTICES.txt)

@@ -55,7 +55,6 @@ jobs:
             if ($report -notmatch 'UI検証: 成功') { throw "UI checks failed: $language" }
           }
           Copy-Item -LiteralPath LICENSE,THIRD_PARTY_NOTICES.txt -Destination package
-          Copy-Item -LiteralPath packaging\README.txt -Destination package\README.txt
           .\packaging\cpu-sensor\build.ps1 -OutputDirectory package\cpu-sensor -CacheDirectory (Join-Path $env:RUNNER_TEMP 'PerformanceGlass-cpu-sensor')
           $version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
           if (-not $version) { throw 'Product version missing' }
