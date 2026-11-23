@@ -10,13 +10,17 @@ mod sensors;
 mod settings;
 mod taskbar_graph;
 mod ui;
+mod updates;
 mod window_style;
 
 use history::History;
 use std::{
     fs::File,
     io::Write,
-    sync::{Arc, Condvar, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Condvar, Mutex,
+    },
     time::{Duration, Instant},
 };
 
@@ -71,6 +75,8 @@ fn main() {
     let stop = Arc::new((Mutex::new(false), Condvar::new()));
     let worker_data = data.clone();
     let worker_stop = stop.clone();
+    let cpu_temperature = Arc::new(AtomicBool::new(false));
+    let worker_cpu_temperature = cpu_temperature.clone();
     // All PDH work runs on this thread so collection never blocks window messages.
     let worker = std::thread::spawn(move || {
         if demo {
@@ -92,7 +98,7 @@ fn main() {
                 break;
             }
             drop(stopped);
-            let sample = collector.sample();
+            let sample = collector.sample(worker_cpu_temperature.load(Ordering::Relaxed));
             worker_data.lock().unwrap().push(sample);
             deadline += Duration::from_secs(1);
             if deadline < Instant::now() {
@@ -100,7 +106,7 @@ fn main() {
             }
         }
     });
-    let result = ui::run(data, &args);
+    let result = ui::run(data, cpu_temperature, &args);
     *stop.0.lock().unwrap() = true;
     stop.1.notify_one();
     let _ = worker.join();
@@ -119,6 +125,7 @@ fn main() {
 fn probe(count: usize, path: &str) -> std::io::Result<()> {
     let mut file = File::create(path)?;
     let mut collector = metrics::Collector::new();
+    let cpu_temperature = settings::Settings::load().cpu_temperature;
     writeln!(file, "# {}", collector.diagnostics())?;
     let start = Instant::now();
     let cpu_start = process_cpu();
@@ -126,7 +133,7 @@ fn probe(count: usize, path: &str) -> std::io::Result<()> {
     for _ in 0..count {
         std::thread::sleep(Duration::from_secs(1));
         let at = Instant::now();
-        let s = collector.sample();
+        let s = collector.sample(cpu_temperature);
         let ms = at.elapsed().as_secs_f64() * 1000.;
         writeln!(
             file,

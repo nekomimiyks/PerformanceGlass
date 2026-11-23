@@ -5,13 +5,17 @@ use crate::{
     metrics,
     settings::{self, Settings},
     taskbar_graph::{self, Frame, METRICS},
+    updates,
 };
 use std::{
     mem::{size_of, zeroed},
     os::windows::ffi::OsStringExt,
     path::PathBuf,
     ptr::{null, null_mut},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Instant,
 };
 use windows_sys::Win32::{
@@ -46,6 +50,10 @@ const ENABLE_STARTUP: usize = 303;
 const DISABLE_STARTUP: usize = 311;
 const EXPORT_BACKUP: usize = 312;
 const RESTORE_BACKUP: usize = 313;
+const TOGGLE_UPDATE_CHECK: usize = 314;
+const APPLY_UPDATE: usize = 315;
+const TOGGLE_CPU_HELPER: usize = 316;
+const UPDATE_CHECK_TIMER: usize = 4;
 /// Minimum drawable area is physical 280x60 even at high DPI.
 unsafe fn minimum_window_size(scale: f64, frameless: bool) -> POINT {
     let mut r = RECT {
@@ -228,6 +236,7 @@ struct DragStart {
 struct App {
     data: Arc<Mutex<History>>,
     settings: Settings,
+    update_check: Option<updates::Check>,
     palette: Palette,
     scale: f64,
     fonts: Fonts,
@@ -256,6 +265,7 @@ struct App {
     cpu_elevated: bool,
     cpu_manual: bool,
     cpu_helper: bool,
+    cpu_temperature_state: Arc<AtomicBool>,
     taskbar_created: u32,
     taskbar_button_created: u32,
     taskbar: Option<taskbar_graph::Taskbar>,
@@ -537,6 +547,9 @@ unsafe fn cpu_message(hwnd: HWND, message: &str) {
 }
 
 unsafe fn start_cpu_sensor(hwnd: HWND, ptr: *mut App, elevated: bool) -> bool {
+    if !(*ptr).settings.cpu_temperature || !(*ptr).settings.cpu_helper_enabled {
+        return false;
+    }
     match cpu_sensor::Reader::start(hwnd, elevated) {
         Ok(reader) => {
             (*ptr).cpu_reader = Some(reader);
@@ -556,6 +569,20 @@ unsafe fn start_cpu_sensor(hwnd: HWND, ptr: *mut App, elevated: bool) -> bool {
     }
 }
 
+unsafe fn sync_cpu_helper(hwnd: HWND, ptr: *mut App, manual: bool) {
+    if !(*ptr).settings.cpu_temperature || !(*ptr).settings.cpu_helper_enabled {
+        (*ptr).cpu_manual = false;
+        (*ptr).cpu_reader = None;
+        if (*ptr).cpu_installer.is_none() {
+            KillTimer(hwnd, 3);
+        }
+    } else if (*ptr).cpu_helper && (*ptr).cpu_reader.is_none() && (*ptr).cpu_installer.is_none() {
+        (*ptr).cpu_manual = manual;
+        (*ptr).cpu_install_attempted = false;
+        start_cpu_sensor(hwnd, ptr, false);
+    }
+}
+
 unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
     if let Some(installer) = (*ptr).cpu_installer.as_ref() {
         let result = cpu_sensor::installer_exit(installer);
@@ -564,6 +591,9 @@ unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
         }
         (*ptr).cpu_installer = None;
         KillTimer(hwnd, 3);
+        if !(*ptr).settings.cpu_temperature || !(*ptr).settings.cpu_helper_enabled {
+            return;
+        }
         match result {
             Ok(Some(0)) => {
                 start_cpu_sensor(hwnd, ptr, false);
@@ -594,13 +624,13 @@ unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
     (*ptr).cpu_reader = None;
     let manual = (*ptr).cpu_manual;
     match outcome {
-        Poll::AdminRequired if !(*ptr).cpu_elevated => {
+        // A saved grant does not trigger elevation during automatic startup.
+        Poll::AdminRequired if manual && !(*ptr).cpu_elevated => {
             let permission = (*ptr).settings.cpu_permission;
             let (allow, remember) = match permission {
                 Permission::Allow => (true, false),
                 Permission::Deny => (false, false),
-                Permission::Ask if manual => cpu_sensor::confirm(hwnd),
-                Permission::Ask => (false, false),
+                Permission::Ask => cpu_sensor::confirm(hwnd),
             };
             if allow {
                 if start_cpu_sensor(hwnd, ptr, true) && remember {
@@ -834,6 +864,83 @@ unsafe fn backup_command(hwnd: HWND, ptr: *mut App, export: bool) {
     }
 }
 
+unsafe fn poll_updates(hwnd: HWND, ptr: *mut App) {
+    let Some(check) = (*ptr).update_check.as_mut() else {
+        return;
+    };
+    let downloaded = check.take_download();
+    let active = (*ptr).settings.auto_update;
+    let update = if active && !check.is_downloading() {
+        check.poll((*ptr).settings.last_update_notice)
+    } else {
+        None
+    };
+    if active || check.is_downloading() {
+        let timer_ms = check.timer_ms();
+        SetTimer(hwnd, UPDATE_CHECK_TIMER, timer_ms, None);
+    } else {
+        KillTimer(hwnd, UPDATE_CHECK_TIMER);
+    }
+    if let Some(installer) = downloaded {
+        if !installer.is_ok_and(|mut installer| installer.launch(hwnd)) {
+            update_error(hwnd);
+        }
+    }
+    if let Some(version) = update {
+        (*ptr).settings.last_update_notice = Some(version);
+        (*ptr).save_settings();
+        offer_update(hwnd, ptr, version);
+    }
+}
+
+unsafe fn offer_update(hwnd: HWND, ptr: *mut App, version: updates::Version) {
+    let title = wide("Performance Glass");
+    let heading = wide(&i18n::message(
+        "最新版 v{} が公開されています。",
+        &version.to_string(),
+    ));
+    let update = wide(tr("更新"));
+    let button = TASKDIALOG_BUTTON {
+        nButtonID: 100,
+        pszButtonText: update.as_ptr(),
+    };
+    let config = TASKDIALOGCONFIG {
+        cbSize: size_of::<TASKDIALOGCONFIG>() as u32,
+        hwndParent: hwnd,
+        dwCommonButtons: TDCBF_CANCEL_BUTTON,
+        nDefaultButton: IDCANCEL,
+        pszWindowTitle: title.as_ptr(),
+        pszMainInstruction: heading.as_ptr(),
+        cButtons: 1,
+        pButtons: &button,
+        ..zeroed()
+    };
+    let mut answer = 0;
+    if TaskDialogIndirect(&config, &mut answer, null_mut(), null_mut()) >= 0 && answer == 100 {
+        if (*ptr)
+            .update_check
+            .as_mut()
+            .is_some_and(|check| check.start_download(version))
+        {
+            SetTimer(hwnd, UPDATE_CHECK_TIMER, 1000, None);
+        } else {
+            update_error(hwnd);
+        }
+    }
+}
+
+unsafe fn update_error(hwnd: HWND) {
+    MessageBoxW(
+        hwnd,
+        wide(tr(
+            "更新を開始できませんでした。設定メニューからもう一度お試しください。",
+        ))
+        .as_ptr(),
+        wide("Performance Glass").as_ptr(),
+        MB_ICONERROR,
+    );
+}
+
 // Native window calls can synchronously re-enter wndproc. Keep only raw
 // state pointers across these boundaries, never a live exclusive App borrow.
 unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
@@ -900,18 +1007,21 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
         }
         305 => show(hwnd, ptr),
         OPEN_MENU => menu(hwnd, ptr),
-        308 if (*ptr).cpu_helper && (*ptr).cpu_installer.is_none() => {
-            if (*ptr).cpu_reader.is_some() {
-                KillTimer(hwnd, 3);
-                (*ptr).cpu_reader = None;
-                if (*ptr).settings.cpu_permission == Permission::Allow {
-                    (*ptr).settings.cpu_permission = Permission::Ask;
-                }
-            } else {
-                (*ptr).cpu_manual = true;
-                (*ptr).cpu_install_attempted = false;
-                start_cpu_sensor(hwnd, ptr, false);
+        308 if (*ptr).persist => {
+            let enabled = !(*ptr).settings.cpu_temperature;
+            (*ptr).settings.cpu_temperature = enabled;
+            (*ptr)
+                .cpu_temperature_state
+                .store(enabled, Ordering::Relaxed);
+            sync_cpu_helper(hwnd, ptr, false);
+        }
+        TOGGLE_CPU_HELPER if (*ptr).cpu_helper => {
+            (*ptr).settings.cpu_helper_enabled = !(*ptr).settings.cpu_helper_enabled;
+            if (*ptr).settings.cpu_helper_enabled {
+                (*ptr).settings.cpu_temperature = true;
+                (*ptr).cpu_temperature_state.store(true, Ordering::Relaxed);
             }
+            sync_cpu_helper(hwnd, ptr, true);
         }
         309 => (*ptr).settings.cpu_permission = Permission::Ask,
         310 => {
@@ -920,6 +1030,27 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
         }
         EXPORT_BACKUP | RESTORE_BACKUP => {
             backup_command(hwnd, ptr, id == EXPORT_BACKUP);
+            return;
+        }
+        TOGGLE_UPDATE_CHECK if (*ptr).update_check.is_some() => {
+            (*ptr).settings.auto_update = !(*ptr).settings.auto_update;
+            (*ptr).save_settings();
+            poll_updates(hwnd, ptr);
+            return;
+        }
+        APPLY_UPDATE
+            if (*ptr)
+                .update_check
+                .as_ref()
+                .is_some_and(|check| !check.is_downloading()) =>
+        {
+            if let Some(version) = (*ptr)
+                .settings
+                .last_update_notice
+                .filter(|&version| updates::Check::is_newer(version))
+            {
+                offer_update(hwnd, ptr, version);
+            }
             return;
         }
         307 => {
@@ -1045,8 +1176,15 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
     if (*ptr).settings.tray_enabled {
         add(302, tr("トレイに格納"), false);
     }
+    if (*ptr).persist {
+        add(308, tr("CPU温度の計測"), (*ptr).settings.cpu_temperature);
+    }
     if (*ptr).cpu_helper {
-        add(308, tr("CPU温度の計測"), (*ptr).cpu_reader.is_some());
+        add(
+            TOGGLE_CPU_HELPER,
+            tr("CPU温度の補助機能（権限が必要な場合あり）"),
+            (*ptr).settings.cpu_helper_enabled,
+        );
         if (*ptr).settings.cpu_permission != Permission::Ask {
             add(309, tr("管理者権限の選択をリセット"), false);
         }
@@ -1123,6 +1261,27 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     add(EXPORT_BACKUP, tr("設定をバックアップ"), false);
     add(RESTORE_BACKUP, tr("設定を復元"), false);
+    if let Some(check) = (*ptr).update_check.as_ref() {
+        add(
+            TOGGLE_UPDATE_CHECK,
+            tr("アップデートを自動確認"),
+            (*ptr).settings.auto_update,
+        );
+        if check.is_downloading() {
+            AppendMenuW(
+                menu,
+                MF_STRING | MF_GRAYED,
+                0,
+                wide(tr("アップデートを準備中…")).as_ptr(),
+            );
+        } else if (*ptr)
+            .settings
+            .last_update_notice
+            .is_some_and(updates::Check::is_newer)
+        {
+            add(APPLY_UPDATE, tr("利用可能なアップデート"), false);
+        }
+    }
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     for (i, name) in range_labels().iter().enumerate() {
         add(
@@ -1477,6 +1636,10 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             0
         }
         WM_TIMER => {
+            if w == UPDATE_CHECK_TIMER {
+                poll_updates(hwnd, ptr);
+                return 0;
+            }
             if w == 3 {
                 poll_cpu_sensor(hwnd, ptr);
                 return 0;
@@ -1545,6 +1708,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
             KillTimer(hwnd, 1);
             KillTimer(hwnd, 2);
             KillTimer(hwnd, 3);
+            KillTimer(hwnd, UPDATE_CHECK_TIMER);
             (*ptr).cpu_reader = None;
             if let Some(path) = &(*ptr).diagnostic {
                 let elapsed = (*ptr).started.elapsed().as_secs_f64();
@@ -1572,7 +1736,11 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
     }
 }
 
-pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
+pub fn run(
+    data: Arc<Mutex<History>>,
+    cpu_temperature_state: Arc<AtomicBool>,
+    args: &[String],
+) -> Result<(), String> {
     unsafe {
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let instance = GetModuleHandleW(null());
@@ -1673,6 +1841,8 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         let mut app = Box::new(App {
             data,
             settings,
+            update_check: (!test_mode && !crate::packaged_startup::is_packaged())
+                .then(updates::Check::default),
             palette: Palette::new(false),
             scale,
             fonts: Fonts::new(scale),
@@ -1702,6 +1872,7 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
             cpu_manual: false,
             cpu_helper: !args.iter().any(|s| s == "--demo" || s == "--test-ui")
                 && cpu_sensor::available(),
+            cpu_temperature_state,
             taskbar_created: RegisterWindowMessageW(wide("TaskbarCreated").as_ptr()),
             taskbar_button_created: RegisterWindowMessageW(wide("TaskbarButtonCreated").as_ptr()),
             taskbar: taskbar_graph::Taskbar::new(),
@@ -1824,9 +1995,10 @@ pub fn run(data: Arc<Mutex<History>>, args: &[String]) -> Result<(), String> {
         if app.auto_exit.is_some() || app.test_ui || app.snapshot.is_some() {
             SetTimer(hwnd, 2, 1000, None);
         }
-        if app.cpu_helper && app.settings.cpu_permission == Permission::Allow {
-            start_cpu_sensor(hwnd, &mut *app, false);
-        }
+        poll_updates(hwnd, &mut *app);
+        app.cpu_temperature_state
+            .store(app.settings.cpu_temperature, Ordering::Relaxed);
+        sync_cpu_helper(hwnd, &mut *app, false);
         let mut msg: MSG = zeroed();
         while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
             if msg.message == TEST_UI {

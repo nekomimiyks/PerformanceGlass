@@ -9,13 +9,15 @@ Windows 10 / 11（x64）向けの軽量な常駐パフォーマンスモニタ�
 - CPU速度、メモリ使用量、ディスク読み書き、通信の送受信、GPU専用メモリ、CPU・GPU温度を表示
 - Windowsのライト／ダーク設定とDPIに対応。表示言語は12言語から自動選択または手動で切り替え
 
-取得できない項目は非表示です。GitHub版では、右クリックの「CPU温度の計測」から有効にできます。対応するPawnIOが未導入の場合は、アプリで確認してから同梱の署名済み公式インストーラーを起動します。ドライバーの導入と、管理者権限が必要な計測には、Windowsの確認画面での許可が必要です。Libre Hardware Monitor・Open Hardware Monitorが公開する値も利用できます。[PawnIO](https://pawnio.eu/)
+取得できない項目は非表示です。CPU温度は、起動済みのLibre Hardware MonitorやOpen Hardware Monitorが公開している値を、現在の権限で読める場合に自動表示します。GitHub版の「CPU温度の補助機能」は既定でオフです。この項目を手動で有効にしたときだけ、必要に応じて管理者権限や同梱のPawnIOインストーラーの起動を確認します。[PawnIO](https://pawnio.eu/)
 
 ## ダウンロード
 
 最新版の `PerformanceGlass-v*-Windows-x64-Setup.exe` を起動してインストールします。完了時に「はい」を選ぶと起動し、「いいえ」を選ぶと終了します。旧ZIP版の表示設定は同じWindowsユーザーで引き継がれます。GitHub版のインストーラーは未署名です。 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)
 
 インストーラーで同じ場所に更新すると、起動中のアプリは設定を保存して自動終了します。通知領域に格納中も同様です。
+
+インストールするとデスクトップにもショートカットが作成されます。GitHub版の右クリックメニューで「アップデートを自動確認」を有効にすると、起動時と起動中は24時間ごとに最新版を確認します。既定はオフです。新版の通知で「更新」を選ぶと、公式インストーラーを取得・検証して起動します。後から更新する場合は、右クリックメニューの「利用可能なアップデート」を選びます。
 
 Microsoft Storeからも入手できます。[Microsoft Store版](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 

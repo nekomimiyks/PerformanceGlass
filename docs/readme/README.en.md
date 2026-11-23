@@ -12,7 +12,9 @@ Run the latest `PerformanceGlass-v*-Windows-x64-Setup.exe`. Choose **Yes** at th
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
-Right-click and choose **CPU temperature monitoring** to use the bundled helper in the GitHub build. The app asks before opening the official PawnIO installer or requesting administrator access. The Store build shows CPU temperature when a compatible local WMI provider supplies it.
+The installer adds a desktop shortcut. In the GitHub edition, enable **Check for updates automatically** from the right-click menu to check on launch and every 24 hours while the app is running. The setting is off by default. Select **Update** in the notification to download, verify and start the installer. To update later, choose **Available update** from the right-click menu.
+
+The app displays CPU temperature automatically when it can read values from a running local WMI provider with its current permissions. The GitHub build includes a sensor helper that is off by default. Administrator access and PawnIO installation are offered only when you explicitly enable the helper.
 
 ## Screenshots
 

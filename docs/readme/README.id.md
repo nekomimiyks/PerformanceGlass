@@ -12,7 +12,9 @@ Jalankan `PerformanceGlass-v*-Windows-x64-Setup.exe` versi terbaru. Setelah peng
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
-Pada versi GitHub, pilih **Pantau suhu CPU** dari menu klik kanan. Aplikasi meminta konfirmasi sebelum membuka penginstal resmi PawnIO atau meminta akses administrator. Versi Store menampilkan suhu CPU jika tersedia dari penyedia WMI lokal yang kompatibel.
+Penginstal membuat pintasan desktop. Di edisi GitHub, pemeriksaan pembaruan otomatis dapat diaktifkan dari menu klik kanan dan nonaktif secara bawaan. Pilih **Perbarui** untuk mengunduh, memverifikasi, dan menjalankan penginstal.
+
+Suhu CPU ditampilkan jika aplikasi dapat membaca penyedia WMI lokal kompatibel yang sedang berjalan dengan izin saat ini. Asisten suhu CPU di edisi GitHub nonaktif secara bawaan. Aplikasi hanya menawarkan pemasangan PawnIO atau meminta akses administrator saat asisten diaktifkan secara manual.
 
 ## Tangkapan layar
 

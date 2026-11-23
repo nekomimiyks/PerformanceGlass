@@ -12,7 +12,9 @@ Lancez le dernier fichier `PerformanceGlass-v*-Windows-x64-Setup.exe`. À la fin
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
-Dans la version GitHub, ouvrez le menu contextuel et choisissez **Mesurer la température du processeur**. L’application demande une confirmation avant d’ouvrir le programme d’installation officiel de PawnIO ou de demander les droits administrateur. La version Store affiche la température du processeur si un fournisseur WMI local compatible la transmet.
+Le programme d’installation crée un raccourci sur le bureau. Dans la version GitHub, vous pouvez activer dans le menu contextuel la recherche automatique des mises à jour, désactivée par défaut. Sélectionnez **Mettre à jour** pour télécharger, vérifier et lancer le programme d’installation.
+
+La température du processeur s’affiche si les droits actuels permettent de lire un fournisseur WMI local compatible en cours d’exécution. L’assistant de température de la version GitHub est désactivé par défaut. L’application ne propose l’installation de PawnIO ou une élévation des droits qu’après activation manuelle.
 
 ## Captures d’écran
 

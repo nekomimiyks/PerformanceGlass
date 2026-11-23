@@ -132,7 +132,7 @@ impl Sensors {
         }
         self.last_enumeration = Instant::now();
     }
-    pub fn read(&mut self) -> [f32; 2] {
+    pub fn read(&mut self, cpu_enabled: bool) -> [f32; 2] {
         if self.last_enumeration.elapsed() >= Duration::from_secs(60) {
             self.enumerate();
         }
@@ -159,6 +159,11 @@ impl Sensors {
                     }
                 }
             }
+        }
+        if !cpu_enabled {
+            self.cpu = None;
+            self.provider_check = None;
+            return [f32::NAN, gpu];
         }
         // Only probe WMI if a real sensor exporter is already running. This
         // avoids starting the WMI provider/service on the normal lightweight path.

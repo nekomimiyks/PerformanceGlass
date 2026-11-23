@@ -73,6 +73,7 @@ Source: "{#PackageDir}\cpu-sensor\*"; DestDir: "{app}\cpu-sensor"; Flags: ignore
 
 [Icons]
 Name: "{userprograms}\Performance Glass"; Filename: "{app}\PerformanceGlass.exe"
+Name: "{userdesktop}\Performance Glass"; Filename: "{app}\PerformanceGlass.exe"; WorkingDir: "{app}"
 
 [Code]
 const

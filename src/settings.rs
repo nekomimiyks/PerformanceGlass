@@ -52,6 +52,10 @@ pub struct Settings {
     pub language: Option<crate::i18n::Language>,
     pub taskbar_metric: Option<usize>,
     pub cpu_permission: crate::cpu_sensor::Permission,
+    pub cpu_temperature: bool,
+    pub cpu_helper_enabled: bool,
+    pub auto_update: bool,
+    pub last_update_notice: Option<crate::updates::Version>,
     pub range: usize,
     pub visible: [bool; 6],
     pub topmost: bool,
@@ -71,6 +75,10 @@ impl Default for Settings {
             language: None,
             taskbar_metric: Some(0),
             cpu_permission: crate::cpu_sensor::Permission::Ask,
+            cpu_temperature: true,
+            cpu_helper_enabled: false,
+            auto_update: false,
+            last_update_notice: None,
             range: 0,
             visible: [true; 6],
             topmost: false,
@@ -104,6 +112,12 @@ impl Settings {
                         "language" => s.language = crate::i18n::Language::from_tag(value),
                         "cpu_permission" => {
                             s.cpu_permission = crate::cpu_sensor::Permission::parse(value)
+                        }
+                        "cpu_temperature" => s.cpu_temperature = value != "0",
+                        "cpu_helper_enabled" => s.cpu_helper_enabled = value == "1",
+                        "auto_update" => s.auto_update = value == "1",
+                        "last_update_notice" => {
+                            s.last_update_notice = crate::updates::Version::parse(value)
                         }
                         "taskbar_metric" => {
                             s.taskbar_metric = if value == "off" {
@@ -188,15 +202,25 @@ impl Settings {
         if !body.lines().eq(settings.preferences_text().lines()) {
             return Err(io::ErrorKind::InvalidData.into());
         }
-        // The local elevation decision belongs to this PC, not to the backup.
+        // Keep this installation's elevation and update-check preferences.
         settings.cpu_permission = self.cpu_permission;
+        settings.cpu_temperature = self.cpu_temperature;
+        settings.cpu_helper_enabled = self.cpu_helper_enabled;
+        settings.auto_update = self.auto_update;
+        settings.last_update_notice = self.last_update_notice;
         Ok(settings)
     }
     fn to_text(&self) -> String {
         format!(
-            "{}cpu_permission={}\n",
+            "{}cpu_permission={}\ncpu_temperature={}\ncpu_helper_enabled={}\nauto_update={}\nlast_update_notice={}\n",
             self.preferences_text(),
-            self.cpu_permission.key()
+            self.cpu_permission.key(),
+            self.cpu_temperature as u8,
+            self.cpu_helper_enabled as u8,
+            self.auto_update as u8,
+            self.last_update_notice
+                .map(|version| version.to_string())
+                .unwrap_or_default()
         )
     }
     fn preferences_text(&self) -> String {
@@ -328,6 +352,36 @@ mod tests {
         assert_eq!(restored.width, 70);
         assert_eq!(restored.normal_width, 140);
         assert_eq!(restored.window_dpi, Some(384));
+    }
+    #[test]
+    fn update_preferences_are_local_and_disabled_in_older_settings() {
+        let old = Settings::from_text("range=2\n");
+        assert!(!old.auto_update);
+        assert_eq!(old.last_update_notice, None);
+        let opted_in = Settings::from_text("auto_update=1\nlast_update_notice=1.2.3");
+        let loaded = Settings::from_text(&opted_in.to_text());
+        assert!(loaded.auto_update);
+        assert_eq!(
+            loaded.last_update_notice,
+            crate::updates::Version::parse("1.2.3")
+        );
+        let backup = format!("{BACKUP_HEADER}\n{}", opted_in.preferences_text());
+        assert!(!old.parse_backup(&backup).unwrap().auto_update);
+        assert!(opted_in.parse_backup(&backup).unwrap().auto_update);
+    }
+    #[test]
+    fn cpu_temperature_defaults_to_read_only_even_with_a_remembered_grant() {
+        assert!(Settings::default().cpu_temperature);
+        assert!(!Settings::default().cpu_helper_enabled);
+        let legacy = Settings::from_text("cpu_permission=allow\n");
+        assert!(legacy.cpu_temperature);
+        assert!(!legacy.cpu_helper_enabled);
+        let disabled = Settings::from_text("cpu_temperature=0\ncpu_permission=allow\n");
+        assert!(!Settings::from_text(&disabled.to_text()).cpu_temperature);
+        let enabled = Settings::from_text("cpu_helper_enabled=1\n");
+        assert!(Settings::from_text(&enabled.to_text()).cpu_helper_enabled);
+        let backup = format!("{BACKUP_HEADER}\n{}", enabled.preferences_text());
+        assert!(!legacy.parse_backup(&backup).unwrap().cpu_helper_enabled);
     }
     #[test]
     fn taskbar_choice_position_and_sensor_permission_survive_restart() {

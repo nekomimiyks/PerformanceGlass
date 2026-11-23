@@ -12,7 +12,9 @@ Execute o arquivo mais recente `PerformanceGlass-v*-Windows-x64-Setup.exe`. Ao t
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
-Na versão do GitHub, selecione **Monitorar a temperatura da CPU** no menu de contexto. O aplicativo pede confirmação antes de abrir o instalador oficial do PawnIO ou solicitar permissões de administrador. A versão da Microsoft Store mostra a temperatura da CPU quando um provedor WMI local compatível fornece o dado.
+O instalador cria um atalho na área de trabalho. Na versão do GitHub, você pode ativar a verificação automática de atualizações no menu de contexto. Ela vem desativada. Selecione **Atualizar** para baixar, verificar e executar o instalador.
+
+A temperatura da CPU aparece quando o aplicativo pode ler um provedor WMI local compatível em execução com as permissões atuais. O assistente de temperatura da versão do GitHub vem desativado. O aplicativo só oferece a instalação do PawnIO ou solicita acesso de administrador ao ativá-lo manualmente.
 
 ## Capturas de tela
 

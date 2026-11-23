@@ -12,7 +12,9 @@
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
-在 GitHub 版中，按滑鼠右鍵選擇 **監測 CPU 溫度** 可啟用隨附的輔助程式。開啟官方 PawnIO 安裝程式或要求系統管理員權限前，應用程式會先徵求同意。Store 版可顯示本機相容 WMI 提供者提供的 CPU 溫度。
+安裝程式會建立桌面捷徑。在 GitHub 版中，可透過右鍵選單啟用預設關閉的自動更新檢查。發現新版本後，選擇 **更新** 即可下載、驗證並啟動安裝程式。
+
+應用程式可用目前權限讀取執行中的本機相容 WMI 提供者時，會顯示 CPU 溫度。 GitHub 版的 CPU 溫度輔助功能預設關閉。只有手動啟用時，應用程式才會詢問是否安裝 PawnIO 或要求系統管理員權限。
 
 ## 畫面截圖
 

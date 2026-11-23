@@ -12,7 +12,9 @@ Windows 10 및 11(x64)용 경량 데스크톱 성능 모니터입니다. CPU, �
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
-GitHub 버전에서는 마우스 오른쪽 버튼을 눌러 **CPU 온도 모니터링**을 선택하면 포함된 도우미가 작동합니다. 공식 PawnIO 설치 프로그램을 열거나 관리자 권한을 요청하기 전에 확인합니다. Store 버전은 호환되는 로컬 WMI 공급자가 제공하는 CPU 온도를 표시합니다.
+설치 프로그램은 바탕 화면 바로 가기를 만듭니다. GitHub 버전의 오른쪽 클릭 메뉴에서 기본값이 꺼짐인 자동 업데이트 확인을 켤 수 있습니다. 새 버전이 있으면 **업데이트**를 선택해 설치 프로그램을 다운로드하고 검증한 뒤 실행합니다.
+
+실행 중인 호환 로컬 WMI 공급자를 현재 권한으로 읽을 수 있으면 CPU 온도가 표시됩니다. GitHub 버전의 CPU 온도 도우미는 기본적으로 꺼져 있습니다. 도우미를 직접 켰을 때만 PawnIO 설치 또는 관리자 권한을 요청합니다.
 
 ## 스크린샷
 

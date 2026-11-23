@@ -237,7 +237,7 @@ impl Collector {
             c
         }
     }
-    pub fn sample(&mut self) -> Sample {
+    pub fn sample(&mut self, cpu_temperature: bool) -> Sample {
         let mut s = Sample {
             time: now(),
             ..Sample::default()
@@ -333,7 +333,7 @@ impl Collector {
                 s.values[1] = 100. * s.memory_used / s.memory_total;
             }
             self.network(&mut s);
-            s.temperatures = self.sensors.read();
+            s.temperatures = self.sensors.read(cpu_temperature);
         }
         s
     }
@@ -429,7 +429,7 @@ mod tests {
     fn live_windows_counters() {
         let mut c = Collector::new();
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        let s = c.sample();
+        let s = c.sample(false);
         assert!(s.values[0].is_finite(), "CPU counter unavailable: {s:?}");
         assert!((0.0..=100.0).contains(&s.values[0]));
         assert!(s.memory_total > 0. && s.values[1].is_finite());
