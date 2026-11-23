@@ -53,6 +53,17 @@ es.LaunchNow=¿Quieres iniciar Performance Glass ahora?
 pt.LaunchNow=Deseja iniciar o Performance Glass agora?
 it.LaunchNow=Avviare Performance Glass adesso?
 ru.LaunchNow=Запустить Performance Glass сейчас?
+en.CloseForUpdateFailed=Performance Glass is still running. Exit it from its menu and run Setup again.
+ja.CloseForUpdateFailed=Performance Glass を終了できませんでした。アプリのメニューから終了して、もう一度セットアップしてください。
+zh_CN.CloseForUpdateFailed=Performance Glass 仍在运行。请通过应用菜单退出后重新安装。
+zh_TW.CloseForUpdateFailed=Performance Glass 仍在執行。請從應用程式選單結束後重新安裝。
+ko.CloseForUpdateFailed=Performance Glass가 실행 중입니다. 앱 메뉴에서 종료한 뒤 설치를 다시 실행하세요.
+de.CloseForUpdateFailed=Performance Glass läuft noch. Beenden Sie die App über ihr Menü und starten Sie das Setup erneut.
+fr.CloseForUpdateFailed=Performance Glass est encore en cours d’exécution. Quittez l’application depuis son menu, puis relancez l’installation.
+es.CloseForUpdateFailed=Performance Glass sigue en ejecución. Sal de la aplicación desde su menú y vuelve a ejecutar el instalador.
+pt.CloseForUpdateFailed=O Performance Glass ainda está em execução. Feche o aplicativo pelo menu e execute o instalador novamente.
+it.CloseForUpdateFailed=Performance Glass è ancora in esecuzione. Chiudi l’app dal suo menu e avvia nuovamente il programma di installazione.
+ru.CloseForUpdateFailed=Performance Glass всё ещё запущен. Выйдите из приложения через его меню и снова запустите установщик.
 
 [Files]
 Source: "{#PackageDir}\PerformanceGlass.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -67,6 +78,66 @@ Name: "{userprograms}\Performance Glass"; Filename: "{app}\PerformanceGlass.exe"
 const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
   RunValue = 'PerformanceGlass';
+  PerformanceGlassWindow = 'PerformanceGlass.Native.Window';
+  WindowCommand = $0111;
+  ExitApp = 304;
+  ProcessQueryAndWait = $00101000; { QUERY_LIMITED_INFORMATION | SYNCHRONIZE }
+  ProcessExited = 0;
+
+function GetWindowThreadProcessId(Window: HWND; var ProcessId: Cardinal): Cardinal;
+  external 'GetWindowThreadProcessId@user32.dll stdcall';
+function OpenProcess(Access: Cardinal; InheritHandle: BOOL; ProcessId: Cardinal): THandle;
+  external 'OpenProcess@kernel32.dll stdcall';
+function QueryFullProcessImageName(Process: THandle; Flags: Cardinal; Name: String; var Size: Cardinal): BOOL;
+  external 'QueryFullProcessImageNameW@kernel32.dll stdcall';
+function WaitForSingleObject(Handle: THandle; Timeout: Cardinal): Cardinal;
+  external 'WaitForSingleObject@kernel32.dll stdcall';
+function CloseHandle(Handle: THandle): BOOL;
+  external 'CloseHandle@kernel32.dll stdcall';
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Target, ProcessPath: String;
+  Window: HWND;
+  Handle: THandle;
+  ProcessId, VerifiedProcessId, Size: Cardinal;
+begin
+  Result := '';
+  Target := ExpandConstant('{app}\PerformanceGlass.exe');
+  if not FileExists(Target) then
+    Exit;
+
+  Window := FindWindowByClassName(PerformanceGlassWindow);
+  if (Window = 0) or (GetWindowThreadProcessId(Window, ProcessId) = 0) then
+    Exit;
+  Handle := OpenProcess(ProcessQueryAndWait, False, ProcessId);
+  if Handle = 0 then
+    Exit;
+  try
+    Size := 32768;
+    SetLength(ProcessPath, Size);
+    if not QueryFullProcessImageName(Handle, 0, ProcessPath, Size) then
+      Exit;
+    SetLength(ProcessPath, Size);
+    if CompareText(ProcessPath, Target) <> 0 then
+      Exit;
+    if WaitForSingleObject(Handle, 0) = ProcessExited then
+      Exit;
+    if (GetWindowThreadProcessId(Window, VerifiedProcessId) <> 0) and
+      (VerifiedProcessId = ProcessId) then
+    begin
+      { Use the existing Exit command so that older tray-mode builds also save and exit. }
+      Log('Requesting a normal exit of the installed Performance Glass.');
+      PostMessage(Window, WindowCommand, ExitApp, 0);
+    end;
+    if WaitForSingleObject(Handle, 15000) <> ProcessExited then
+      Result := CustomMessage('CloseForUpdateFailed')
+    else
+      Log('Installed Performance Glass exited before replacement.');
+  finally
+    CloseHandle(Handle);
+  end;
+end;
 
 function InstalledCommand: String;
 begin

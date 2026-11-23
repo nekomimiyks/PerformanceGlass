@@ -39,6 +39,8 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 const TRAY_MESSAGE: u32 = WM_APP + 1;
 const TEST_UI: u32 = WM_APP + 2;
 const TIMES: [usize; 5] = [101, 102, 103, 104, 105];
+// Used by the Windows installer to close this installation before an update.
+const EXIT_APP: usize = 304;
 const OPEN_MENU: usize = 306;
 const ENABLE_STARTUP: usize = 303;
 const DISABLE_STARTUP: usize = 311;
@@ -889,7 +891,7 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
                 );
             }
         }
-        304 => {
+        EXIT_APP => {
             if IsWindowVisible(hwnd) != 0 {
                 (*ptr).update_position(hwnd);
             }
@@ -1149,7 +1151,7 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
         }
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
-    add(304, tr("終了 (&X)"), false);
+    add(EXIT_APP, tr("終了 (&X)"), false);
     let mut pt: POINT = zeroed();
     GetCursorPos(&mut pt);
     SetForegroundWindow(hwnd);
@@ -1447,7 +1449,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) ->
                 if (*ptr).settings.tray_enabled {
                     302
                 } else {
-                    304
+                    EXIT_APP
                 },
             );
             0

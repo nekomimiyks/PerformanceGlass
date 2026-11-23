@@ -15,6 +15,8 @@ Windows 10 / 11（x64）向けの軽量な常駐パフォーマンスモニタ�
 
 最新版の `PerformanceGlass-v*-Windows-x64-Setup.exe` を起動してインストールします。完了時に「はい」を選ぶと起動し、「いいえ」を選ぶと終了します。旧ZIP版の表示設定は同じWindowsユーザーで引き継がれます。GitHub版のインストーラーは未署名です。 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)
 
+インストーラーで同じ場所に更新すると、起動中のアプリは設定を保存して自動終了します。通知領域に格納中も同様です。
+
 Microsoft Storeからも入手できます。[Microsoft Store版](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
 ## スクリーンショット
