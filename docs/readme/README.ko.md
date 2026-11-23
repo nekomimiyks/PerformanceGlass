@@ -8,7 +8,7 @@ Windows 10 및 11(x64)용 경량 데스크톱 성능 모니터입니다. CPU, �
 
 ## 다운로드
 
-Windows ZIP의 압축을 모두 푼 뒤 `PerformanceGlass.exe`를 실행하세요. 기본 모니터링에는 설치나 관리자 권한이 필요하지 않습니다. GitHub 버전의 EXE는 서명되지 않았습니다.
+최신 `PerformanceGlass-v*-Windows-x64-Setup.exe`를 실행하세요. 설치가 끝나면 **예**를 선택해 앱을 시작하거나 **아니요**를 선택해 종료할 수 있습니다. 같은 Windows 사용자 계정에서는 기존 ZIP 버전의 설정이 유지됩니다. GitHub 설치 프로그램은 서명되지 않았습니다.
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@ GitHub 버전에서는 마우스 오른쪽 버튼을 눌러 **CPU 온도 모니�
 
 스크린샷은 예제 데이터를 사용합니다.
 
-| 보기 | 어두운 테마 | 밝은 테마 |
-| --- | --- | --- |
-| 일반 | ![일반 (어두운 테마)](../images/ko/normal.png) | ![일반 (밝은 테마)](../images/ko/normal-light.png) |
-| 그래프만 표시 | ![그래프만 표시 (어두운 테마)](../images/ko/graph-only.png) | ![그래프만 표시 (밝은 테마)](../images/ko/graph-only-light.png) |
+### 일반 (어두운 테마)
+
+![일반 (어두운 테마)](../images/ko/normal.png)
+
+### 일반 (밝은 테마)
+
+![일반 (밝은 테마)](../images/ko/normal-light.png)
+
+### 그래프만 표시 (어두운 테마)
+
+![그래프만 표시 (어두운 테마)](../images/ko/graph-only.png)
+
+### 그래프만 표시 (밝은 테마)
+
+![그래프만 표시 (밝은 테마)](../images/ko/graph-only-light.png)
+
+## 설정 백업 및 복원
+
+마우스 오른쪽 버튼을 눌러 **설정 백업**을 선택하고 `.pgbackup` 파일을 저장하세요. **설정 복원**에서 파일을 열고 확인하면 저장된 표시 설정이 적용됩니다. 측정 기록, Windows 자동 시작 및 관리자 권한 선택은 백업에 포함되지 않습니다.
 
 ## 조작
 

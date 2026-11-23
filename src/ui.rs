@@ -8,6 +8,8 @@ use crate::{
 };
 use std::{
     mem::{size_of, zeroed},
+    os::windows::ffi::OsStringExt,
+    path::PathBuf,
     ptr::{null, null_mut},
     sync::{Arc, Mutex},
     time::Instant,
@@ -16,7 +18,13 @@ use windows_sys::Win32::{
     Foundation::*,
     Graphics::{Dwm::*, Gdi::*},
     System::{LibraryLoader::*, Registry::*, Threading::*},
-    UI::{Controls::*, HiDpi::*, Input::KeyboardAndMouse::*, Shell::*, WindowsAndMessaging::*},
+    UI::{
+        Controls::{Dialogs::*, *},
+        HiDpi::*,
+        Input::KeyboardAndMouse::*,
+        Shell::*,
+        WindowsAndMessaging::*,
+    },
 };
 
 #[path = "ui_render.rs"]
@@ -34,6 +42,8 @@ const TIMES: [usize; 5] = [101, 102, 103, 104, 105];
 const OPEN_MENU: usize = 306;
 const ENABLE_STARTUP: usize = 303;
 const DISABLE_STARTUP: usize = 311;
+const EXPORT_BACKUP: usize = 312;
+const RESTORE_BACKUP: usize = 313;
 /// Minimum drawable area is physical 280x60 even at high DPI.
 unsafe fn minimum_window_size(scale: f64, frameless: bool) -> POINT {
     let mut r = RECT {
@@ -281,7 +291,7 @@ impl App {
     }
     fn save_settings(&self) {
         if self.persist {
-            self.settings.save();
+            let _ = self.settings.save();
         }
     }
     unsafe fn update_position(&mut self, hwnd: HWND) {
@@ -631,6 +641,197 @@ unsafe fn poll_cpu_sensor(hwnd: HWND, ptr: *mut App) {
     }
 }
 
+unsafe fn refresh_language(ptr: *mut App) {
+    (*ptr).frame_plot = None;
+    i18n::select((*ptr).settings.language);
+    (*ptr).hover = None;
+    (*ptr).tooltip.hide();
+    (*ptr).fonts = Fonts::new((*ptr).scale);
+    let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
+    (*ptr).tray.szTip.fill(0);
+    (&mut (*ptr).tray.szTip)[..tip.len()].copy_from_slice(&tip);
+    if !(*ptr).tray.hWnd.is_null() {
+        Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray);
+    }
+}
+
+unsafe fn refresh_tray(hwnd: HWND, ptr: *mut App) {
+    if (*ptr).settings.tray_enabled {
+        if (*ptr).tray.hWnd.is_null() {
+            (*ptr).tray_add(hwnd);
+        }
+    } else if !(*ptr).tray.hWnd.is_null() {
+        if IsWindowVisible(hwnd) == 0 {
+            show(hwnd, ptr);
+        }
+        Shell_NotifyIconW(NIM_DELETE, &(*ptr).tray);
+        (*ptr).tray = zeroed();
+    }
+}
+
+unsafe fn backup_dialog(hwnd: HWND, export: bool) -> Result<Option<PathBuf>, u32> {
+    let mut filename = vec![0u16; 32768];
+    if export {
+        let default = wide("PerformanceGlass.pgbackup");
+        filename[..default.len()].copy_from_slice(&default);
+    }
+    let filter = wide("Performance Glass (*.pgbackup)\0*.pgbackup\0");
+    let extension = wide("pgbackup");
+    let title = wide(tr(if export {
+        "設定をバックアップ"
+    } else {
+        "設定を復元"
+    }));
+    let mut dialog: OPENFILENAMEW = zeroed();
+    dialog.lStructSize = size_of::<OPENFILENAMEW>() as u32;
+    dialog.hwndOwner = hwnd;
+    dialog.lpstrFilter = filter.as_ptr();
+    dialog.lpstrFile = filename.as_mut_ptr();
+    dialog.nMaxFile = filename.len() as u32;
+    dialog.lpstrTitle = title.as_ptr();
+    dialog.lpstrDefExt = extension.as_ptr();
+    dialog.Flags = OFN_EXPLORER
+        | OFN_NOCHANGEDIR
+        | OFN_PATHMUSTEXIST
+        | if export {
+            OFN_OVERWRITEPROMPT
+        } else {
+            OFN_FILEMUSTEXIST
+        };
+    let success = if export {
+        GetSaveFileNameW(&mut dialog)
+    } else {
+        GetOpenFileNameW(&mut dialog)
+    };
+    if success != 0 {
+        let len = filename
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(filename.len());
+        return Ok(Some(PathBuf::from(std::ffi::OsString::from_wide(
+            &filename[..len],
+        ))));
+    }
+    match CommDlgExtendedError() {
+        0 => Ok(None),
+        error => Err(error),
+    }
+}
+
+unsafe fn apply_backup(hwnd: HWND, ptr: *mut App, restored: Settings) {
+    let (width, height, mut x, mut y) = (restored.width, restored.height, restored.x, restored.y);
+    let frameless = restored.frameless;
+    let topmost = restored.topmost;
+    if IsIconic(hwnd) != 0 || IsZoomed(hwnd) != 0 {
+        ShowWindow(hwnd, SW_RESTORE);
+    }
+    (*ptr).settings = restored;
+    (*ptr).drag_start = None;
+    refresh_language(ptr);
+    refresh_tray(hwnd, ptr);
+    let style = crate::window_style::with_frame(GetWindowLongW(hwnd, GWL_STYLE) as u32, frameless);
+    SetWindowLongPtrW(hwnd, GWL_STYLE, style as isize);
+    let mut flags = SWP_NOACTIVATE | SWP_FRAMECHANGED;
+    if x == i32::MIN || y == i32::MIN {
+        flags |= SWP_NOMOVE;
+    } else {
+        let point = POINT { x, y };
+        let monitor = MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST);
+        keep_window_reachable(monitor, &mut x, &mut y, (*ptr).px(width as f64));
+        // Let WM_DPICHANGED update the scale before sizing on the destination monitor.
+        SetWindowPos(
+            hwnd,
+            null_mut(),
+            x,
+            y,
+            0,
+            0,
+            SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
+        );
+    }
+    let minimum = minimum_window_size((*ptr).scale, frameless);
+    let width = (*ptr).px(width as f64).max(minimum.x);
+    let height = (*ptr).px(height as f64).max(minimum.y);
+    SetWindowPos(
+        hwnd,
+        if topmost {
+            HWND_TOPMOST
+        } else {
+            HWND_NOTOPMOST
+        },
+        x,
+        y,
+        width,
+        height,
+        flags,
+    );
+    (*ptr).update_position(hwnd);
+    (*ptr).save_settings();
+    update_taskbar_icon(hwnd, ptr);
+    InvalidateRect(hwnd, null(), 0);
+}
+
+unsafe fn backup_command(hwnd: HWND, ptr: *mut App, export: bool) {
+    let file = match backup_dialog(hwnd, export) {
+        Ok(Some(file)) => file,
+        Ok(None) => return,
+        Err(error) => {
+            MessageBoxW(
+                hwnd,
+                wide(&format!("{} ({error})", tr("ファイルを選択できません。"))).as_ptr(),
+                wide("Performance Glass").as_ptr(),
+                MB_ICONERROR,
+            );
+            return;
+        }
+    };
+    if export {
+        if IsWindowVisible(hwnd) != 0 {
+            (*ptr).update_position(hwnd);
+        }
+        let result = (*ptr).settings.export_backup(&file);
+        let (message, icon) = if result.is_ok() {
+            ("設定のバックアップを保存しました。", MB_ICONINFORMATION)
+        } else {
+            ("設定のバックアップを保存できません。", MB_ICONERROR)
+        };
+        MessageBoxW(
+            hwnd,
+            wide(tr(message)).as_ptr(),
+            wide("Performance Glass").as_ptr(),
+            icon,
+        );
+        return;
+    }
+    let Ok(restored) = (*ptr).settings.read_backup(&file) else {
+        MessageBoxW(
+            hwnd,
+            wide(tr("この設定バックアップを読み込めません。")).as_ptr(),
+            wide("Performance Glass").as_ptr(),
+            MB_ICONERROR,
+        );
+        return;
+    };
+    let answer = MessageBoxW(
+        hwnd,
+        wide(tr("現在の設定をバックアップの内容で置き換えますか？")).as_ptr(),
+        wide("Performance Glass").as_ptr(),
+        MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2,
+    );
+    if answer == IDYES {
+        if (*ptr).persist && restored.save().is_err() {
+            MessageBoxW(
+                hwnd,
+                wide(tr("復元した設定を保存できません。")).as_ptr(),
+                wide("Performance Glass").as_ptr(),
+                MB_ICONERROR,
+            );
+            return;
+        }
+        apply_backup(hwnd, ptr, restored);
+    }
+}
+
 // Native window calls can synchronously re-enter wndproc. Keep only raw
 // state pointers across these boundaries, never a live exclusive App borrow.
 unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
@@ -649,21 +850,11 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             }
         }
         400..=412 => {
-            (*ptr).frame_plot = None;
             (*ptr).settings.language = id
                 .checked_sub(401)
                 .and_then(|i| i18n::LANGUAGES.get(i))
                 .copied();
-            i18n::select((*ptr).settings.language);
-            (*ptr).hover = None;
-            (*ptr).tooltip.hide();
-            let fonts = Fonts::new((*ptr).scale);
-
-            (*ptr).fonts = fonts;
-            let tip = wide(&format!("Performance Glass — {}", tr("クリックして表示")));
-            (*ptr).tray.szTip.fill(0);
-            (&mut (*ptr).tray.szTip)[..tip.len()].copy_from_slice(&tip);
-            Shell_NotifyIconW(NIM_MODIFY, &(*ptr).tray);
+            refresh_language(ptr);
         }
         101..=105 => {
             (*ptr).settings.range = id - 101;
@@ -723,15 +914,11 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
         309 => (*ptr).settings.cpu_permission = Permission::Ask,
         310 => {
             (*ptr).settings.tray_enabled = !(*ptr).settings.tray_enabled;
-            if (*ptr).settings.tray_enabled {
-                (*ptr).tray_add(hwnd);
-            } else {
-                if IsWindowVisible(hwnd) == 0 {
-                    show(hwnd, ptr);
-                }
-                Shell_NotifyIconW(NIM_DELETE, &(*ptr).tray);
-                (*ptr).tray = zeroed();
-            }
+            refresh_tray(hwnd, ptr);
+        }
+        EXPORT_BACKUP | RESTORE_BACKUP => {
+            backup_command(hwnd, ptr, id == EXPORT_BACKUP);
+            return;
         }
         307 => {
             (*ptr).hover = None;
@@ -931,6 +1118,9 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
             DestroyMenu(languages);
         }
     }
+    AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    add(EXPORT_BACKUP, tr("設定をバックアップ"), false);
+    add(RESTORE_BACKUP, tr("設定を復元"), false);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     for (i, name) in range_labels().iter().enumerate() {
         add(

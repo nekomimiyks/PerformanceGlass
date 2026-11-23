@@ -8,7 +8,7 @@ Choose a history range of 1 min, 10 min, 60 min, 6 h or 12 h. Read CPU speed, me
 
 ## Download
 
-Extract the Windows ZIP and run `PerformanceGlass.exe`. Basic monitoring requires no installation or administrator access. The GitHub executable is unsigned.
+Run the latest `PerformanceGlass-v*-Windows-x64-Setup.exe`. Choose **Yes** at the end to start the app, or **No** to finish without launching. Settings from the ZIP edition carry over for the same Windows user. The GitHub installer is unsigned.
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@ Right-click and choose **CPU temperature monitoring** to use the bundled helper 
 
 Screenshots use sample data.
 
-| View | Dark | Light |
-| --- | --- | --- |
-| Normal | ![Normal (Dark)](../images/en/normal.png) | ![Normal (Light)](../images/en/normal-light.png) |
-| Chart only | ![Chart only (Dark)](../images/en/graph-only.png) | ![Chart only (Light)](../images/en/graph-only-light.png) |
+### Normal (Dark)
+
+![Normal (Dark)](../images/en/normal.png)
+
+### Normal (Light)
+
+![Normal (Light)](../images/en/normal-light.png)
+
+### Chart only (Dark)
+
+![Chart only (Dark)](../images/en/graph-only.png)
+
+### Chart only (Light)
+
+![Chart only (Light)](../images/en/graph-only-light.png)
+
+## Back up and restore settings
+
+Right-click and choose **Back up settings** to save a `.pgbackup` file. Choose **Restore settings**, open the file and confirm to apply the saved display preferences. The backup excludes measurement history, Windows startup and administrator access choices.
 
 ## Controls
 

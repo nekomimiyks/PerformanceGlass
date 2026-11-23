@@ -58,10 +58,10 @@ jobs:
           .\packaging\cpu-sensor\build.ps1 -OutputDirectory package\cpu-sensor -CacheDirectory (Join-Path $env:RUNNER_TEMP 'PerformanceGlass-cpu-sensor')
           $version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
           if (-not $version) { throw 'Product version missing' }
-          $zip = "PerformanceGlass-v$version-Windows-MSVC.zip"
-          Compress-Archive -Path package\* -DestinationPath $zip
-          (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant() + '  PerformanceGlass.exe' | Set-Content -LiteralPath SHA256SUMS.txt
-          (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $zip | Add-Content -LiteralPath SHA256SUMS.txt
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          .\packaging\build-installer.ps1 -PackageDirectory package -Compiler $compiler
+          $setup = Get-Item -LiteralPath "dist\PerformanceGlass-v$version-Windows-x64-Setup.exe"
+          (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $setup.Name | Set-Content -LiteralPath SHA256SUMS.txt
           @("Commit: $env:GITHUB_SHA", 'Target: x86_64-pc-windows-msvc', 'CRT: static', 'Authenticode: unsigned', (rustc +stable -V)) | Set-Content -LiteralPath build-info.txt
       - name: Package for Microsoft Store
         if: ${{ vars.STORE_PACKAGE_NAME != '' && vars.STORE_PACKAGE_PUBLISHER != '' }}
@@ -77,7 +77,7 @@ jobs:
           name: PerformanceGlass-msvc
           path: |
             package/PerformanceGlass.exe
-            PerformanceGlass-*-Windows-MSVC.zip
+            dist/PerformanceGlass-*-Windows-x64-Setup.exe
             SHA256SUMS.txt
             build-info.txt
             dist/PerformanceGlass-*-x64.msix

@@ -8,7 +8,7 @@ Choisissez une période de 1, 10 ou 60 minutes, ou de 6 ou 12 heures. Consultez 
 
 ## Téléchargement
 
-Extrayez entièrement le ZIP Windows et lancez `PerformanceGlass.exe`. La surveillance de base fonctionne sans installation ni droits administrateur. L’EXE GitHub n’est pas signé.
+Lancez le dernier fichier `PerformanceGlass-v*-Windows-x64-Setup.exe`. À la fin, choisissez **Oui** pour ouvrir l’application ou **Non** pour quitter. Les réglages de la version ZIP sont conservés pour le même compte Windows. Le programme d’installation GitHub n’est pas signé.
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@ Dans la version GitHub, ouvrez le menu contextuel et choisissez **Mesurer la tem
 
 Les captures utilisent des données d’exemple.
 
-| Affichage | Sombre | Clair |
-| --- | --- | --- |
-| Normal | ![Normal (Sombre)](../images/fr/normal.png) | ![Normal (Clair)](../images/fr/normal-light.png) |
-| Graphique seul | ![Graphique seul (Sombre)](../images/fr/graph-only.png) | ![Graphique seul (Clair)](../images/fr/graph-only-light.png) |
+### Normal (Sombre)
+
+![Normal (Sombre)](../images/fr/normal.png)
+
+### Normal (Clair)
+
+![Normal (Clair)](../images/fr/normal-light.png)
+
+### Graphique seul (Sombre)
+
+![Graphique seul (Sombre)](../images/fr/graph-only.png)
+
+### Graphique seul (Clair)
+
+![Graphique seul (Clair)](../images/fr/graph-only-light.png)
+
+## Sauvegarder et restaurer les paramètres
+
+Faites un clic droit et choisissez **Sauvegarder les paramètres** pour enregistrer un fichier `.pgbackup`. Pour rétablir les préférences d’affichage, choisissez **Restaurer les paramètres**, ouvrez le fichier et confirmez. L’historique des mesures, le démarrage avec Windows et les choix de droits administrateur sont exclus.
 
 ## Commandes
 

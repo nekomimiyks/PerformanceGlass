@@ -13,20 +13,33 @@ Windows 10 / 11（x64）向けの軽量な常駐パフォーマンスモニタ�
 
 ## ダウンロード
 
-最新版のWindows用ZIPをすべて展開し、`PerformanceGlass.exe` を起動してください。基本機能はインストールや管理者権限なしで使えます。[GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)
+最新版の `PerformanceGlass-v*-Windows-x64-Setup.exe` を起動してインストールします。完了時に「はい」を選ぶと起動し、「いいえ」を選ぶと終了します。旧ZIP版の表示設定は同じWindowsユーザーで引き継がれます。GitHub版のインストーラーは未署名です。 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest)
 
 Microsoft Storeからも入手できます。[Microsoft Store版](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
-
-GitHub版EXEは未署名です。
 
 ## スクリーンショット
 
 掲載画像はデモデータで撮影しています。
 
-| 表示 | ダーク | ライト |
-| --- | --- | --- |
-| 通常 | ![通常表示・ダーク](docs/images/normal.png) | ![通常表示・ライト](docs/images/normal-light.png) |
-| グラフ専用 | ![グラフ専用・ダーク](docs/images/graph-only.png) | ![グラフ専用・ライト](docs/images/graph-only-light.png) |
+### 通常表示・ダーク
+
+![通常表示・ダーク](docs/images/normal.png)
+
+### 通常表示・ライト
+
+![通常表示・ライト](docs/images/normal-light.png)
+
+### グラフ専用・ダーク
+
+![グラフ専用・ダーク](docs/images/graph-only.png)
+
+### グラフ専用・ライト
+
+![グラフ専用・ライト](docs/images/graph-only-light.png)
+
+## 設定のバックアップと復元
+
+右クリック → **設定をバックアップ** で `.pgbackup` ファイルを保存します。右クリック → **設定を復元** でそのファイルを開き、確認画面で「はい」を選ぶと現在の表示設定に反映されます。計測履歴、Windowsの自動起動、管理者権限の許可はバックアップに含まれません。
 
 ## 操作
 
@@ -44,13 +57,20 @@ GitHub版EXEは未署名です。
 
 ## ソースからビルドする場合
 
-以下の開発ツールは、ソースからEXEを作る場合にだけ必要です。配布ZIPのEXEは展開してそのまま使えます。
+以下の開発ツールは、ソースからEXEを作る場合にだけ必要です。通常は上記のインストーラーを利用してください。
 
 PowerShellとRustに加え、GNU版はMinGW（`windres.exe`を含む）、MSVC版はC++ Build ToolsとWindows SDKを用意してください。
 
 ```powershell
 .\build.ps1
 .\build.ps1 -Target x86_64-pc-windows-msvc
+```
+
+インストーラーを作る場合は、Inno SetupとCPU温度用の同梱ファイルが必要です。EXE、`LICENSE`、`THIRD_PARTY_NOTICES.txt` を `package` に置き、次のコマンドを実行します。
+
+```powershell
+.\packaging\cpu-sensor\build.ps1 -OutputDirectory package\cpu-sensor -CacheDirectory dist\cpu-sensor-cache
+.\packaging\build-installer.ps1 -PackageDirectory package
 ```
 
 [プライバシー](docs/privacy.md) · [MITライセンス](LICENSE) · [第三者表記](THIRD_PARTY_NOTICES.txt)

@@ -8,7 +8,7 @@
 
 ## 下載
 
-完整解壓縮 Windows ZIP 後執行 `PerformanceGlass.exe`。基本監控不需要安裝或系統管理員權限。GitHub 版 EXE 尚未簽署。
+執行最新版 `PerformanceGlass-v*-Windows-x64-Setup.exe`。安裝完成後，選擇「是」啟動應用程式，選擇「否」直接結束。使用同一個 Windows 帳戶時，原 ZIP 版的設定會保留。GitHub 安裝程式未簽署。
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@
 
 截圖使用範例資料。
 
-| 顯示模式 | 深色 | 淺色 |
-| --- | --- | --- |
-| 一般顯示 | ![一般顯示 (深色)](../images/zh-Hant/normal.png) | ![一般顯示 (淺色)](../images/zh-Hant/normal-light.png) |
-| 僅顯示圖表 | ![僅顯示圖表 (深色)](../images/zh-Hant/graph-only.png) | ![僅顯示圖表 (淺色)](../images/zh-Hant/graph-only-light.png) |
+### 一般顯示 (深色)
+
+![一般顯示 (深色)](../images/zh-Hant/normal.png)
+
+### 一般顯示 (淺色)
+
+![一般顯示 (淺色)](../images/zh-Hant/normal-light.png)
+
+### 僅顯示圖表 (深色)
+
+![僅顯示圖表 (深色)](../images/zh-Hant/graph-only.png)
+
+### 僅顯示圖表 (淺色)
+
+![僅顯示圖表 (淺色)](../images/zh-Hant/graph-only-light.png)
+
+## 備份與還原設定
+
+按一下滑鼠右鍵，選擇 **備份設定**，儲存 `.pgbackup` 檔案。選擇 **還原設定**，開啟該檔案並確認，即可套用已儲存的顯示設定。備份不含監測記錄、Windows 自動啟動或系統管理員權限選擇。
 
 ## 操作
 

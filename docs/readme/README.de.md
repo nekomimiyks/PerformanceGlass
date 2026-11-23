@@ -8,7 +8,7 @@ Wähle 1, 10 oder 60 Minuten, 6 oder 12 Stunden. Angezeigt werden CPU-Takt, Spei
 
 ## Download
 
-Entpacke die Windows-ZIP-Datei vollständig und starte `PerformanceGlass.exe`. Für die grundlegende Überwachung sind weder eine Installation noch Administratorrechte erforderlich. Die EXE auf GitHub ist unsigniert.
+Starte die aktuelle Datei `PerformanceGlass-v*-Windows-x64-Setup.exe`. Wähle am Ende **Ja**, um die App zu starten, oder **Nein**, um die Installation zu beenden. Beim gleichen Windows-Konto bleiben die Einstellungen der ZIP-Version erhalten. Das GitHub-Installationsprogramm ist unsigniert.
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@ Aktiviere **CPU-Temperatur messen** im Kontextmenü der GitHub-Version. Die App 
 
 Die Screenshots zeigen Beispieldaten.
 
-| Ansicht | Dunkel | Hell |
-| --- | --- | --- |
-| Normal | ![Normal (Dunkel)](../images/de/normal.png) | ![Normal (Hell)](../images/de/normal-light.png) |
-| Nur Diagramm | ![Nur Diagramm (Dunkel)](../images/de/graph-only.png) | ![Nur Diagramm (Hell)](../images/de/graph-only-light.png) |
+### Normal (Dunkel)
+
+![Normal (Dunkel)](../images/de/normal.png)
+
+### Normal (Hell)
+
+![Normal (Hell)](../images/de/normal-light.png)
+
+### Nur Diagramm (Dunkel)
+
+![Nur Diagramm (Dunkel)](../images/de/graph-only.png)
+
+### Nur Diagramm (Hell)
+
+![Nur Diagramm (Hell)](../images/de/graph-only-light.png)
+
+## Einstellungen sichern und wiederherstellen
+
+Wähle im Kontextmenü **Einstellungen sichern**, um eine `.pgbackup`-Datei zu speichern. Wähle **Einstellungen wiederherstellen**, öffne die Datei und bestätige, um die Anzeigeeinstellungen zu übernehmen. Messverlauf, Windows-Autostart und Administratorrechte sind nicht in der Sicherung enthalten.
 
 ## Bedienung
 

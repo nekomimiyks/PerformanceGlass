@@ -8,7 +8,7 @@ Pilih riwayat 1, 10, atau 60 menit, atau 6 atau 12 jam. Lihat kecepatan CPU, pen
 
 ## Unduh
 
-Ekstrak semua isi ZIP Windows, lalu jalankan `PerformanceGlass.exe`. Pemantauan dasar dapat digunakan tanpa instalasi atau akses administrator. EXE di GitHub tidak bertanda tangan digital.
+Jalankan `PerformanceGlass-v*-Windows-x64-Setup.exe` versi terbaru. Setelah penginstalan, pilih **Ya** untuk menjalankan aplikasi atau **Tidak** untuk keluar. Pengaturan versi ZIP tetap tersedia untuk akun Windows yang sama. Penginstal GitHub tidak bertanda tangan digital.
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@ Pada versi GitHub, pilih **Pantau suhu CPU** dari menu klik kanan. Aplikasi memi
 
 Tangkapan layar menggunakan data contoh.
 
-| Tampilan | Gelap | Terang |
-| --- | --- | --- |
-| Normal | ![Normal (Gelap)](../images/id/normal.png) | ![Normal (Terang)](../images/id/normal-light.png) |
-| Grafik saja | ![Grafik saja (Gelap)](../images/id/graph-only.png) | ![Grafik saja (Terang)](../images/id/graph-only-light.png) |
+### Normal (Gelap)
+
+![Normal (Gelap)](../images/id/normal.png)
+
+### Normal (Terang)
+
+![Normal (Terang)](../images/id/normal-light.png)
+
+### Grafik saja (Gelap)
+
+![Grafik saja (Gelap)](../images/id/graph-only.png)
+
+### Grafik saja (Terang)
+
+![Grafik saja (Terang)](../images/id/graph-only-light.png)
+
+## Cadangkan dan pulihkan pengaturan
+
+Klik kanan dan pilih **Cadangkan pengaturan** untuk menyimpan berkas `.pgbackup`. Pilih **Pulihkan pengaturan**, buka berkas, lalu konfirmasi untuk menerapkan pengaturan tampilan. Cadangan tidak mencakup riwayat pengukuran, startup Windows, atau pilihan akses administrator.
 
 ## Kontrol
 

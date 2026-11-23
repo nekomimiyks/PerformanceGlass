@@ -8,7 +8,7 @@ Elige un intervalo de 1, 10 o 60 minutos, o de 6 o 12 horas. Consulta la velocid
 
 ## Descarga
 
-Extrae todo el ZIP de Windows y ejecuta `PerformanceGlass.exe`. La monitorización básica funciona sin instalación ni permisos de administrador. El EXE de GitHub no está firmado.
+Ejecuta el archivo más reciente `PerformanceGlass-v*-Windows-x64-Setup.exe`. Al finalizar, elige **Sí** para iniciar la aplicación o **No** para cerrar. Se conservan los ajustes de la versión ZIP si usas la misma cuenta de Windows. El instalador de GitHub no está firmado.
 
 [GitHub Releases](https://github.com/nekomimiyks/PerformanceGlass/releases/latest) · [Microsoft Store](https://apps.microsoft.com/detail/9PJ34ZZHSD01)
 
@@ -18,10 +18,25 @@ En la versión de GitHub, selecciona **Medir la temperatura de la CPU** en el me
 
 Las capturas usan datos de ejemplo.
 
-| Vista | Oscuro | Claro |
-| --- | --- | --- |
-| Normal | ![Normal (Oscuro)](../images/es/normal.png) | ![Normal (Claro)](../images/es/normal-light.png) |
-| Solo gráfico | ![Solo gráfico (Oscuro)](../images/es/graph-only.png) | ![Solo gráfico (Claro)](../images/es/graph-only-light.png) |
+### Normal (Oscuro)
+
+![Normal (Oscuro)](../images/es/normal.png)
+
+### Normal (Claro)
+
+![Normal (Claro)](../images/es/normal-light.png)
+
+### Solo gráfico (Oscuro)
+
+![Solo gráfico (Oscuro)](../images/es/graph-only.png)
+
+### Solo gráfico (Claro)
+
+![Solo gráfico (Claro)](../images/es/graph-only-light.png)
+
+## Copia de seguridad y restauración
+
+Haz clic derecho y selecciona **Hacer copia de seguridad de la configuración** para guardar un archivo `.pgbackup`. Selecciona **Restaurar la configuración**, abre el archivo y confirma para aplicar los ajustes de visualización. La copia excluye el historial de mediciones, el inicio con Windows y los permisos de administrador.
 
 ## Controles
 
