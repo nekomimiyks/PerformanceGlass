@@ -46,4 +46,6 @@ Wähle im Kontextmenü **Einstellungen sichern**, um eine `.pgbackup`-Datei zu s
 - Ziehe an einer Kante oder Ecke, um die Größe anzupassen. Die reine Diagrammansicht ist bis auf 280 × 60 physische Pixel verkleinerbar.
 - Zeige mit der Maus auf das Diagramm, um Messwerte zu sehen. Ein Rechtsklick oder `F10` öffnet Einstellungen für Verlauf, Sprache, Taskleistendiagramm und Infobereich. Der Infobereichsmodus ist standardmäßig aus.
 
+„Über diese App“ im Kontextmenü zeigt die laufende Version und Links zu den Apps des Herausgebers auf GitHub und im Microsoft Store.
+
 [Datenschutzerklärung (Japanisch)](../privacy.md) · [MIT-Lizenz](../../LICENSE) · [Hinweise zu Drittanbietern](../../THIRD_PARTY_NOTICES.txt)

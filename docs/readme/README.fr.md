@@ -46,4 +46,6 @@ Faites un clic droit et choisissez **Sauvegarder les paramètres** pour enregist
 - Faites glisser un bord ou un coin pour redimensionner la fenêtre. Le mode graphique seul peut descendre à 280 × 60 pixels physiques.
 - Survolez le graphique pour lire les valeurs. Un clic droit ou `F10` ouvre les réglages de période, langue, graphique de la barre des tâches et zone de notification. Le mode zone de notification est désactivé par défaut.
 
+« À propos de cette application » dans le menu contextuel affiche la version en cours et les liens vers les applications de l’éditeur sur GitHub et le Microsoft Store.
+
 [Politique de confidentialité (japonais)](../privacy.md) · [Licence MIT](../../LICENSE) · [Mentions de tiers](../../THIRD_PARTY_NOTICES.txt)

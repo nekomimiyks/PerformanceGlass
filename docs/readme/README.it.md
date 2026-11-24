@@ -46,4 +46,6 @@ Fai clic con il tasto destro e scegli **Salva backup delle impostazioni** per sa
 - Trascina un bordo o un angolo per ridimensionare la finestra. La modalità solo grafico può scendere a 280 × 60 pixel fisici.
 - Passa il puntatore sul grafico per vedere i valori. Usa il tasto destro o `F10` per impostare cronologia, lingua, grafico della barra delle applicazioni e area di notifica. La modalità nell’area di notifica è disattivata in modo predefinito.
 
+«Informazioni sull’app» nel menu contestuale mostra la versione in uso e i collegamenti alle app dell’editore su GitHub e Microsoft Store.
+
 [Informativa sulla privacy (giapponese)](../privacy.md) · [Licenza MIT](../../LICENSE) · [Avvisi di terze parti](../../THIRD_PARTY_NOTICES.txt)

@@ -46,4 +46,6 @@ Right-click and choose **Back up settings** to save a `.pgbackup` file. Choose *
 - Drag an edge or corner to resize. Chart-only mode can shrink to 280 × 60 physical pixels.
 - Hover over the chart to read values. Right-click or press `F10` for history ranges, language, taskbar graph and optional system tray mode. Tray mode is off by default.
 
+Open About this app from the right-click menu to see the running version and links to the publisher’s apps on GitHub and Microsoft Store.
+
 [Privacy policy (Japanese)](../privacy.md) · [MIT license](../../LICENSE) · [Third-party notices](../../THIRD_PARTY_NOTICES.txt)

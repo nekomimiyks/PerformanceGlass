@@ -46,4 +46,6 @@ Haz clic derecho y selecciona **Hacer copia de seguridad de la configuración** 
 - Arrastra un borde o una esquina para cambiar el tamaño. El modo de solo gráfico permite reducirlo a 280 × 60 píxeles físicos.
 - Sitúa el cursor sobre el gráfico para ver valores. Haz clic derecho o pulsa `F10` para ajustar el historial, el idioma, el gráfico de la barra de tareas y la bandeja del sistema. La bandeja está desactivada de forma predeterminada.
 
+«Acerca de esta aplicación» en el menú contextual muestra la versión en ejecución y enlaces a las aplicaciones del editor en GitHub y Microsoft Store.
+
 [Política de privacidad (japonés)](../privacy.md) · [Licencia MIT](../../LICENSE) · [Avisos de terceros](../../THIRD_PARTY_NOTICES.txt)

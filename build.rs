@@ -71,6 +71,16 @@ fn main() {
     let resource = format!(
         r#"1 24 "app.manifest"
 101 ICON "app.ico"
+102 DIALOGEX 0, 0, 160, 140
+STYLE 0x80C808C0
+FONT 9, "Segoe UI"
+BEGIN
+  LTEXT "", 1001, 20, 18, 120, 12
+  LTEXT "", 1002, 20, 36, 120, 12
+  CONTROL "", 1003, "BUTTON", 0x0001000B, 20, 60, 126, 16
+  CONTROL "", 1004, "BUTTON", 0x0001000B, 20, 79, 126, 16
+  CONTROL "", 2, "BUTTON", 0x0001000B, 63, 108, 78, 22
+END
 1 VERSIONINFO
 FILEVERSION {numeric_version}
 PRODUCTVERSION {numeric_version}

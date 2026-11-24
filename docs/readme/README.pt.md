@@ -46,4 +46,6 @@ Clique com o botão direito e escolha **Fazer backup das configurações** para 
 - Arraste uma borda ou um canto para redimensionar. No modo somente gráfico, o tamanho mínimo é de 280 × 60 pixels físicos.
 - Passe o cursor sobre o gráfico para ver os valores. Clique com o botão direito ou pressione `F10` para ajustar histórico, idioma, gráfico da barra de tarefas e bandeja do sistema. O modo bandeja vem desativado.
 
+A opção “Sobre este aplicativo” no menu de contexto mostra a versão em execução e links para os aplicativos do editor no GitHub e na Microsoft Store.
+
 [Política de privacidade (japonês)](../privacy.md) · [Licença MIT](../../LICENSE) · [Avisos de terceiros](../../THIRD_PARTY_NOTICES.txt)

@@ -31,6 +31,8 @@ use windows_sys::Win32::{
     },
 };
 
+#[path = "ui_about.rs"]
+mod about;
 #[path = "ui_render.rs"]
 mod rendering;
 #[path = "ui_tooltip.rs"]
@@ -53,6 +55,7 @@ const RESTORE_BACKUP: usize = 313;
 const TOGGLE_UPDATE_CHECK: usize = 314;
 const APPLY_UPDATE: usize = 315;
 const TOGGLE_CPU_HELPER: usize = 316;
+const ABOUT_APP: usize = 317;
 const UPDATE_CHECK_TIMER: usize = 4;
 /// Minimum drawable area is physical 280x60 even at high DPI.
 unsafe fn minimum_window_size(scale: f64, frameless: bool) -> POINT {
@@ -1006,6 +1009,10 @@ unsafe fn command(hwnd: HWND, ptr: *mut App, id: usize) {
             return;
         }
         305 => show(hwnd, ptr),
+        ABOUT_APP => {
+            about::show(hwnd, (*ptr).applied_dark.unwrap_or(false));
+            return;
+        }
         OPEN_MENU => menu(hwnd, ptr),
         308 if (*ptr).persist => {
             let enabled = !(*ptr).settings.cpu_temperature;
@@ -1310,6 +1317,7 @@ unsafe fn menu(hwnd: HWND, ptr: *mut App) {
         }
     }
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
+    add(ABOUT_APP, tr("アプリについて"), false);
     add(EXIT_APP, tr("終了 (&X)"), false);
     let mut pt: POINT = zeroed();
     GetCursorPos(&mut pt);

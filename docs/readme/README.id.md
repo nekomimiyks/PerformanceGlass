@@ -46,4 +46,6 @@ Klik kanan dan pilih **Cadangkan pengaturan** untuk menyimpan berkas `.pgbackup`
 - Tarik tepi atau sudut untuk mengubah ukuran. Mode grafik saja dapat diperkecil hingga 280 × 60 piksel fisik.
 - Arahkan kursor ke grafik untuk melihat nilai. Klik kanan atau tekan `F10` untuk pengaturan riwayat, bahasa, grafik bilah tugas, dan baki sistem. Mode baki sistem secara bawaan nonaktif.
 
+Pilih “Tentang aplikasi ini” dari menu klik kanan untuk melihat versi yang sedang berjalan dan tautan ke aplikasi penerbit di GitHub dan Microsoft Store.
+
 [Kebijakan privasi (bahasa Jepang)](../privacy.md) · [Lisensi MIT](../../LICENSE) · [Pemberitahuan pihak ketiga](../../THIRD_PARTY_NOTICES.txt)
